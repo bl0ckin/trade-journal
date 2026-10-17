@@ -97,7 +97,7 @@ describe("simulator history formats extend the journal import path", () => {
     expect(new Set(roundTrips.map((t) => t.key)).size).toBe(2);
     expect(
       buildRoundTrips(
-        result.executions.toReversed().map((e, i) => ({
+        [...result.executions].reverse().map((e, i) => ({
           ...e,
           id: String(i),
           accountId: "fixture",
@@ -158,6 +158,17 @@ describe("simulator history formats extend the journal import path", () => {
       ["short", 2, 36],
     ]);
     expect(roundTrips[0]?.exits.map((e) => e.grossPnl)).toEqual([20, -20]);
+  });
+  it("a swap credit on an MT5 exit deal adds to the trade's net P&L", () => {
+    // Commission -2 on each leg, +12 swap and 100 profit on the exit: the balance gains 108.
+    const result =
+      parse(`Time,Deal,Symbol,Type,Direction,Volume,Price,Order,Commission,Fee,Swap,Profit
+2026.01.05 09:00,1,EURUSD,buy,in,1,1.1,101,-2,0,0,0
+2026.01.06 10:00,2,EURUSD,sell,out,1,1.101,102,-2,0,12,100`);
+    expect(result.executions.every((e) => e.fee >= 0)).toBe(true);
+    const [trade] = trips(result);
+    expect(trade?.netPnl).toBeCloseTo(108, 8);
+    expect(trade?.fees).toBe(2);
   });
   it("does not turn an unmatched MT5 exit into an invented opposite position", () => {
     const lines = DEALS.split("\n");
@@ -338,6 +349,33 @@ describe("history timestamps preserve journal timezone semantics", () => {
       { adapterId: "generic-csv" },
     );
     expect(ambiguous.issues.map((i) => i.code)).toContain("date-order-assumed-mdy");
+  });
+  it("a TradingView export whose dates prove day-first is read day-first", () => {
+    const text = TV.replace(/2026-01-05 (\d\d:\d\d)/g, "04/03/2026 $1").replace(
+      "2,Exit short,04/03/2026",
+      "2,Exit short,14/03/2026",
+    );
+    const result = parse(text, { symbol: "AAPL" });
+    expect(result.executions.map((e) => e.executedAt.slice(0, 10)).sort()).toEqual([
+      "2026-03-04",
+      "2026-03-04",
+      "2026-03-04",
+      "2026-03-14",
+    ]);
+  });
+  it("a MetaTrader export with ambiguous slash dates says month-first was assumed", () => {
+    const text = MT5.replace(/2026\.01\.0(\d)/g, "01/0$1/2026");
+    const result = parse(text);
+    expect(result.executions[0]?.executedAt).toBe("2026-01-05T09:00:00.000Z");
+    expect(result.warnings.join(" ")).toContain("month-first");
+  });
+  it("an explicit UTC or GMT suffix is honoured whatever the statement timezone", () => {
+    expect(parseImportTimestamp("2026-01-05 14:30:00 UTC", "MDY", "America/New_York")).toBe(
+      Date.parse("2026-01-05T14:30:00Z"),
+    );
+    expect(parseImportTimestamp("2026-01-05 14:30:00 GMT", "MDY", "Asia/Tokyo")).toBe(
+      Date.parse("2026-01-05T14:30:00Z"),
+    );
   });
   it("history timestamps accept EST suffixes and long-form dates exactly like the legacy importers", () => {
     expect(parseImportTimestamp("2026-01-05 09:31:00 EST", "MDY", "America/New_York")).toBe(

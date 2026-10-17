@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import { buildRoundTrips } from "@luxalgo/journal-core";
 import { detectFormat, parseAuto } from "../src/detect";
 import { parseWithMapping, readHeaders } from "../src/formats/generic";
-import { parseMoney } from "../src/numbers";
+import { parseMoney, parseQuantity } from "../src/numbers";
+import { parseNumericCell } from "../src/history/csv";
 import { parseTimestamp } from "../src/dates";
+import { storedImportMetadata, type ImportedExecution } from "../src/types";
 
 // NOTE: fixtures are synthetic, shaped after each platform's documented export.
 // Validating against real exports is a launch-checklist item; every parser is
@@ -38,6 +40,18 @@ const MT4_HTML = `<html><head><title>Statement</title></head><body>
 <tr><td>12345</td><td>2026.01.05 09:31</td><td>buy</td><td>1.00</td><td>eurusd</td><td>1.09500</td><td>0.00000</td><td>0.00000</td><td>2026.01.05 14:20</td><td>1.09850</td><td>-7.00</td><td>0.00</td><td>-0.50</td><td>350.00</td></tr>
 </table></body></html>`;
 
+/** Round trips as the journal builds them from stored fills. */
+const journalTrips = (executions: ImportedExecution[]) =>
+  buildRoundTrips(
+    executions.map((e, i) => ({
+      ...e,
+      id: `e${i}`,
+      accountId: "a",
+      source: "import" as const,
+      importMetadata: storedImportMetadata(e),
+    })),
+  );
+
 describe("importers turn any platform's export into normalized executions", () => {
   it("a TradeZella export migrates with net P&L preserved to the cent", () => {
     const result = parseAuto(TRADEZELLA_CSV)!;
@@ -58,6 +72,47 @@ describe("importers turn any platform's export into normalized executions", () =
     expect(aapl.netPnl).toBeCloseTo(171, 2);
     expect(tsla.netPnl).toBeCloseTo(-102.5, 2);
     expect(tsla.direction).toBe("short");
+  });
+
+  it("a TradeZella futures trade keeps its stated net P&L and never gets a negative fee", () => {
+    const result =
+      parseAuto(`Open Date,Close Date,Symbol,Side,Volume,Entry Price,Exit Price,Net P&L,Commissions
+2026-01-05 09:31:00,2026-01-05 10:15:00,ES,LONG,1,5000,5002,96,4`)!;
+    expect(result.executions.every((e) => e.fee >= 0)).toBe(true);
+    const [trade] = journalTrips(result.executions);
+    expect(trade!.fees).toBe(4);
+    expect(trade!.netPnl).toBe(96);
+  });
+
+  it("a TradeZella row without a side is skipped, never assumed to be long", () => {
+    const result = parseAuto(`Open Date,Close Date,Symbol,Volume,Entry Price,Exit Price,Net P&L
+2026-01-05 09:31:00,2026-01-05 10:15:00,AAPL,100,185.50,187.25,175`)!;
+    expect(result.executions).toHaveLength(0);
+    expect(result.skippedRows).toBe(1);
+    expect(result.warnings.join(" ")).toContain("side");
+  });
+
+  it("TradeZella's separate date and time columns keep the time of day", () => {
+    const result =
+      parseAuto(`Open Date,Open Time,Close Date,Close Time,Symbol,Side,Volume,Entry Price,Exit Price,Net P&L
+2026-01-05,09:31:00,2026-01-05,10:15:00,AAPL,LONG,100,185.50,187.25,175`)!;
+    expect(result.executions.map((e) => e.executedAt)).toEqual([
+      "2026-01-05T09:31:00.000Z",
+      "2026-01-05T10:15:00.000Z",
+    ]);
+    // What the earlier parser saved (midnight), so a reimport over it is refused.
+    expect(result.executions[0]!.legacyExecutedAt).toBe("2026-01-05T00:00:00.000Z");
+  });
+
+  it("overlapping TradeZella trades on one symbol stay separate trades", () => {
+    const result = parseAuto(`Open Date,Close Date,Symbol,Side,Volume,Entry Price,Exit Price,Net P&L
+2026-01-05 09:31:00,2026-01-05 10:15:00,AAPL,LONG,100,185.50,187.25,175
+2026-01-05 09:45:00,2026-01-05 10:30:00,AAPL,LONG,50,186.00,185.00,-50`)!;
+    const trades = journalTrips(result.executions);
+    expect(trades.map((t) => [t.quantity, t.netPnl]).sort()).toEqual([
+      [100, 175],
+      [50, -50],
+    ]);
   });
 
   it("a Tradervue executions export imports fills with all three fee columns summed", () => {
@@ -92,20 +147,115 @@ describe("importers turn any platform's export into normalized executions", () =
     expect(result.executions[0]!.symbol).toBe("ES");
   });
 
-  it("a MetaTrader HTML statement reconstructs each closed trade with swap folded into fees", () => {
+  it("a MetaTrader HTML statement keeps each trade's reported profit, commission and swap", () => {
     const result = parseAuto(MT4_HTML)!;
     expect(result.format).toBe("metatrader");
     expect(result.executions).toHaveLength(2);
-    const trades = buildRoundTrips(
-      result.executions.map((e, i) => ({
-        ...e,
-        id: `e${i}`,
-        accountId: "a",
-        source: "import" as const,
-      })),
-    );
+    const trades = journalTrips(result.executions);
     expect(trades[0]!.symbol).toBe("EURUSD");
     expect(trades[0]!.fees).toBeCloseTo(7.5, 6);
+    // Profit 350 is the statement's own figure; no contract size is needed.
+    expect(trades[0]!.netPnl).toBeCloseTo(342.5, 6);
+  });
+
+  it("a swap credit on a MetaTrader statement adds to the trade instead of counting as a fee", () => {
+    const result = parseAuto(MT4_HTML.replace("<td>-0.50</td>", "<td>+2.50</td>"))!;
+    expect(result.format).toBe("metatrader");
+    expect(result.executions.every((e) => e.fee >= 0)).toBe(true);
+    const [trade] = journalTrips(result.executions);
+    expect(trade!.fees).toBeCloseTo(4.5, 6);
+    expect(trade!.netPnl).toBeCloseTo(345.5, 6); // 350 profit - 7 commission + 2.50 swap
+  });
+
+  it("MetaTrader statements keep the fill identity the earlier parser saved", () => {
+    // Re-importing a statement imported before must match the rows it saved.
+    const result = parseAuto(MT4_HTML)!;
+    expect(
+      result.executions.map((e) => [e.symbol, e.side, e.quantity, e.price, e.executedAt]),
+    ).toEqual([
+      ["EURUSD", "buy", 1, 1.095, "2026-01-05T09:31:00.000Z"],
+      ["EURUSD", "sell", 1, 1.0985, "2026-01-05T14:20:00.000Z"],
+    ]);
+    expect(result.executions.every((e) => e.importMetadata === undefined)).toBe(true);
+  });
+
+  it("DAS short sells and covers import as sells and buys", () => {
+    const result = parseAuto(`Symb,B/S,Qty,Price,Date,Time
+AAPL,SS,100,185.50,2026-01-05,09:31:00
+AAPL,BC,100,185.00,2026-01-05,09:45:00
+MSFT,Short Sell,10,400,2026-01-05,10:00:00
+MSFT,Cover,10,399,2026-01-05,10:05:00
+TSLA,Sell Short,5,240,2026-01-05,11:00:00
+TSLA,Buy to cover,5,239,2026-01-05,11:05:00`)!;
+    expect(result.format).toBe("das-trader");
+    expect(result.executions.map((e) => e.side)).toEqual([
+      "sell",
+      "buy",
+      "sell",
+      "buy",
+      "sell",
+      "buy",
+    ]);
+    expect(result.skippedRows).toBe(0);
+  });
+
+  it("a fill whose side is not recognized is skipped and the user is told", () => {
+    const result = parseAuto(`Symb,B/S,Qty,Price,Date,Time
+AAPL,B,100,185.50,2026-01-05,09:31:00
+AAPL,XFER,100,185.00,2026-01-05,09:45:00`)!;
+    expect(result.executions).toHaveLength(1);
+    expect(result.warnings.join(" ")).toContain('"XFER"');
+  });
+
+  it("fills at the same second keep the file's order, whether it lists oldest or newest first", () => {
+    const header = "Symbol,Side,Type,Qty,Fill Price,Status,Commission,Closing Time";
+    const rows = [
+      "NASDAQ:AAPL,Buy,Market,10,100,Filled,0,2026-01-05 09:30:00",
+      "NASDAQ:AAPL,Sell,Market,10,101,Filled,0,2026-01-05 09:30:00",
+      "NASDAQ:AAPL,Sell,Market,5,102,Filled,0,2026-01-05 10:00:00",
+      "NASDAQ:AAPL,Buy,Market,5,101,Filled,0,2026-01-05 10:30:00",
+    ];
+    for (const lines of [rows, [...rows].reverse()]) {
+      const result = parseAuto([header, ...lines].join("\n"))!;
+      // Ids that sort sells first, so only the import order can put the buy first.
+      const trades = buildRoundTrips(
+        result.executions.map((e, i) => ({
+          ...e,
+          id: `${e.side === "sell" ? "a" : "b"}${i}`,
+          accountId: "a",
+          source: "import" as const,
+          importMetadata: storedImportMetadata(e),
+        })),
+      );
+      expect(trades.map((t) => [t.direction, t.quantity, t.netPnl])).toEqual([
+        ["long", 10, 10],
+        ["short", 5, 5],
+      ]);
+    }
+  });
+
+  it("ThinkorSwim option fills are their own contract, never merged into the stock", () => {
+    const result = parseAuto(`Account Trade History
+,Exec Time,Spread,Side,Qty,Pos Effect,Symbol,Exp,Strike,Type,Price,Net Price,Order Type
+,1/5/26 09:30:00,STOCK,BUY,+100,TO OPEN,AAPL,,,STOCK,185.50,185.50,LMT
+,1/5/26 09:31:00,SINGLE,BUY,+1,TO OPEN,AAPL,17 JAN 26,190,CALL,2.50,2.50,LMT
+,1/5/26 09:45:00,SINGLE,SELL,-1,TO CLOSE,AAPL,17 JAN 26,190,CALL,3.10,3.10,LMT
+,1/5/26 10:00:00,STOCK,SELL,-100,TO CLOSE,AAPL,,,STOCK,186.00,186.00,LMT
+`)!;
+    expect(result.format).toBe("thinkorswim");
+    expect(result.executions.map((e) => [e.symbol, e.assetClass])).toEqual([
+      ["AAPL", undefined],
+      ["AAPL 17 JAN 26 190 CALL", "option"],
+      ["AAPL 17 JAN 26 190 CALL", "option"],
+      ["AAPL", undefined],
+    ]);
+    // The earlier parser saved option fills under the stock symbol; a reimport over them is refused.
+    expect(result.executions[1]!.legacy).toEqual({ symbol: "AAPL" });
+    const trades = journalTrips(result.executions);
+    expect(trades.map((t) => [t.symbol, t.quantity])).toEqual([
+      ["AAPL", 100],
+      ["AAPL 17 JAN 26 190 CALL", 1],
+    ]);
   });
 
   it("an unknown file is not guessed at — it goes to the column mapper instead", () => {
@@ -131,6 +281,47 @@ describe("parsing primitives survive the mess real exports contain", () => {
     expect(parseMoney("(45.20)")).toBe(-45.2);
     expect(parseMoney("1.234,56")).toBe(1234.56);
     expect(parseMoney("-12.5")).toBe(-12.5);
+  });
+
+  it("a minus sign after the currency symbol still makes the value negative", () => {
+    expect(parseMoney("$-12.50")).toBe(-12.5);
+    expect(parseMoney("-$12.50")).toBe(-12.5);
+    expect(parseMoney("€ -3,5")).toBe(-3.5);
+  });
+
+  it("a comma that cannot be a thousands separator is a decimal comma", () => {
+    expect(parseMoney("0,005")).toBe(0.005);
+    expect(parseMoney("0,12345")).toBe(0.12345);
+    expect(parseMoney("42000,50")).toBe(42000.5);
+    expect(parseMoney("1.234,567")).toBe(1234.567);
+    expect(parseMoney("1,234,567")).toBe(1234567);
+    expect(parseQuantity("0,005")).toBe(0.005);
+    // "12,345" alone is ambiguous: thousands unless the file uses decimal commas.
+    expect(parseMoney("12,345")).toBe(12345);
+    expect(parseMoney("12,345", ",")).toBe(12.345);
+    expect(parseMoney("1.234", ",")).toBe(1234);
+    expect(parseNumericCell("0,005")).toBe(0.005);
+  });
+
+  it("a file that proves decimal commas reads its ambiguous values the same way", () => {
+    const result = parseAuto(`Date;Time;Symbol;Quantity;Price;Side
+2026-01-05;09:31:00;BTCUSD;0,005;42000,50;Buy
+2026-01-05;10:15:00;BTCUSD;1,005;42100,50;Buy`)!;
+    expect(result.format).toBe("tradervue");
+    expect(result.executions.map((e) => [e.quantity, e.price])).toEqual([
+      [0.005, 42000.5],
+      [1.005, 42100.5],
+    ]);
+    // The earlier parser read these quantities as 5 and 1005; a reimport over them is refused.
+    expect(result.executions.map((e) => e.legacy)).toEqual([{ quantity: 5 }, { quantity: 1005 }]);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("an ambiguous thousands comma in a file without decimals is read as thousands and flagged", () => {
+    const result = parseAuto(`Date,Time,Symbol,Quantity,Price,Side
+2026-01-05,09:31:00,AAPL,"1,500",185,Buy`)!;
+    expect(result.executions[0]!.quantity).toBe(1500);
+    expect(result.warnings.join(" ")).toContain("1,500");
   });
 
   it("naive timestamps are interpreted in the trader's timezone, not the server's", () => {
@@ -181,6 +372,16 @@ U1234567,AAPL,20260105;101500,SELL,-100,187.25,-1.00,STK,C`;
     expect(result.executions).toHaveLength(2);
     expect(result.executions[0]!.executedAt).toBe("2026-01-05T09:31:00.000Z");
     expect(result.executions[0]!.fee).toBe(1);
+  });
+
+  it("a fill export's UTC timestamps stay UTC, and a reimport over the earlier reading is refused", () => {
+    const result = parseAuto(
+      `Symbol,Side,Type,Qty,Fill Price,Status,Commission,Closing Time
+NASDAQ:AAPL,Buy,Market,10,185.50,Filled,0,2026-01-05 14:31:00 UTC`,
+      { timeZone: "America/New_York" },
+    )!;
+    expect(result.executions[0]!.executedAt).toBe("2026-01-05T14:31:00.000Z");
+    expect(result.executions[0]!.legacyExecutedAt).toBe("2026-01-05T19:31:00.000Z");
   });
 
   it("TradeZella time fields with a timezone abbreviation still parse", () => {

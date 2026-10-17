@@ -1,8 +1,6 @@
 import { expect, it } from "vitest";
 import { netReturnOnEntry } from "../src";
-
 const equity = { avgEntry: 100, quantity: 2, netPnl: 20, assetClass: "equity" };
-
 it("measures futures and option returns against the full entry value including fees", () => {
   expect(
     netReturnOnEntry({
@@ -23,7 +21,6 @@ it("measures futures and option returns against the full entry value including f
     }),
   ).toBeCloseTo(-1.3 / 247, 12);
 });
-
 it.each(["futures", "option", "forex", "cfd"])(
   "requires a known multiplier for %s",
   (assetClass) => {
@@ -32,7 +29,6 @@ it.each(["futures", "option", "forex", "cfd"])(
     expect(netReturnOnEntry({ ...equity, assetClass, contractMultiplier: 10 })).toBe(0.01);
   },
 );
-
 it.each(["equity", "crypto", "other", null, undefined])(
   "preserves unit pricing for %s",
   (assetClass) => {
@@ -40,14 +36,12 @@ it.each(["equity", "crypto", "other", null, undefined])(
     expect(netReturnOnEntry({ ...equity, assetClass, contractMultiplier: 2 })).toBe(0.05);
   },
 );
-
 it("uses absolute entry value while preserving the sign of net P&L", () => {
   expect(netReturnOnEntry({ ...equity, avgEntry: -100 })).toBe(0.1);
   expect(netReturnOnEntry({ ...equity, avgEntry: -100, netPnl: -20 })).toBe(-0.1);
   expect(netReturnOnEntry({ ...equity, netPnl: 0 })).toBe(0);
   expect(netReturnOnEntry({ ...equity, quantity: 0.5 })).toBe(0.4);
 });
-
 it("leaves zero or invalid entry values unavailable instead of inventing a return", () => {
   for (const avgEntry of [0, NaN, Infinity, -Infinity])
     expect(netReturnOnEntry({ ...equity, avgEntry })).toBeNull();
@@ -58,7 +52,6 @@ it("leaves zero or invalid entry values unavailable instead of inventing a retur
   for (const netPnl of [NaN, Infinity, -Infinity])
     expect(netReturnOnEntry({ ...equity, netPnl })).toBeNull();
 });
-
 it("does not return infinity when arithmetic exceeds the supported range", () => {
   expect(netReturnOnEntry({ ...equity, avgEntry: Number.MAX_VALUE })).toBeNull();
   expect(netReturnOnEntry({ ...equity, avgEntry: Number.MIN_VALUE, quantity: 0.1 })).toBeNull();
