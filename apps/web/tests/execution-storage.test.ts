@@ -113,7 +113,7 @@ describe("execution storage preserves a coherent journal", () => {
     expect(db.select().from(trades).get()?.notes).toBe(notes);
   });
 
-  it("appends exit notes to the correct position without changing unrelated trade notes", () => {
+  it("keeps separately entered manual trades independent, each with its own notes and PnL", () => {
     insertExecutions("test", [rows[0]!], "manual", "Entry plan");
     insertExecutions(
       "test",
@@ -121,19 +121,23 @@ describe("execution storage preserves a coherent journal", () => {
       "manual",
       "Unrelated note",
     );
-    insertExecutions("test", [rows[1]!], "manual", "Exit review");
+    insertExecutions("test", [rows[1]!], "manual", "Second trade");
     const saved = db.select().from(trades).all();
-    expect(saved.find((row) => row.symbol === "TEST")).toMatchObject({
-      notes: "Entry plan\n\nExit review",
+    const test = saved.filter((row) => row.symbol === "TEST");
+    expect(test).toHaveLength(2);
+    expect(test.map((row) => row.notes).sort()).toEqual(["Entry plan", "Second trade"]);
+    expect(test.every((row) => row.netPnl === 0)).toBe(true);
+    expect(saved.find((row) => row.symbol === "OTHER")).toMatchObject({
+      notes: "Unrelated note",
       netPnl: 20,
     });
-    expect(saved.find((row) => row.symbol === "OTHER")?.notes).toBe("Unrelated note");
   });
 
   it("keeps existing notes when a manual exit has no notes", () => {
     insertExecutions("test", [rows[0]!], "manual", "Keep this plan");
     insertExecutions("test", [rows[1]!], "manual", "   ");
-    expect(db.select().from(trades).get()?.notes).toBe("Keep this plan");
+    const saved = db.select().from(trades).all();
+    expect(saved.map((row) => row.notes)).toContain("Keep this plan");
   });
 
   it("saves notes for an already-recorded trade without duplicating fills or repeated notes", () => {
@@ -177,13 +181,13 @@ describe("execution storage preserves a coherent journal", () => {
     expect(db.select().from(trades).all()).toHaveLength(0);
   });
 
-  it("rolls back new executions if appending notes exceeds the existing notes limit", () => {
+  it("rolls back if appending notes to a recorded trade exceeds the notes limit", () => {
     const existing = "a".repeat(100000);
-    insertExecutions("test", [rows[0]!], "manual", existing);
-    expect(() => insertExecutions("test", [rows[1]!], "manual", "Exit review")).toThrow(
+    insertExecutions("test", rows, "manual", existing);
+    expect(() => insertExecutions("test", rows, "manual", "Later review")).toThrow(
       "Combined trade notes",
     );
-    expect(db.select().from(executions).all()).toHaveLength(1);
-    expect(db.select().from(trades).get()).toMatchObject({ notes: existing, status: "open" });
+    expect(db.select().from(executions).all()).toHaveLength(2);
+    expect(db.select().from(trades).get()).toMatchObject({ notes: existing });
   });
 });

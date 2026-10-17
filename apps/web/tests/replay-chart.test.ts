@@ -5,7 +5,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { HistoricalReplay } from "../src/components/trade-market-data";
 import { TooltipProvider } from "../src/components/ui/tooltip";
 import type { TradeMarketResult } from "../src/lib/market-data";
-
 const renderer = vi.hoisted(() => ({
   create: vi.fn(),
   register: vi.fn(),
@@ -20,7 +19,6 @@ vi.mock("@luxalgo/vela", () => ({
   registerNativeIndicator: renderer.register,
   unregisterNativeIndicator: renderer.unregister,
 }));
-
 const history: TradeMarketResult = {
   provider: "csv",
   symbol: "TEST",
@@ -83,7 +81,6 @@ const click = async (label: string) => {
   expect(button, label).toBeDefined();
   await act(async () => button!.click());
 };
-
 it.each([false, true])(
   "loads candles and operates replay when randomUUID is available: %s",
   async (available) => {
@@ -100,14 +97,12 @@ it.each([false, true])(
     expect(instance.addNativeIndicator).toHaveBeenCalledWith(
       renderer.register.mock.calls[0]![0].type,
     );
-
     await click("Restart replay");
     expect(instance.setMarket).toHaveBeenLastCalledWith({ data: history.bars.slice(0, 1) });
     await click("Next candle");
     expect(instance.setMarket).toHaveBeenLastCalledWith({ data: history.bars.slice(0, 2) });
     await click("Previous candle");
     expect(instance.setMarket).toHaveBeenLastCalledWith({ data: history.bars.slice(0, 1) });
-
     vi.useFakeTimers();
     await click("Play");
     await act(async () => vi.advanceTimersByTime(250));
@@ -120,7 +115,6 @@ it.each([false, true])(
     expect(container.querySelector('[role="alert"]')).toBeNull();
   },
 );
-
 it("keeps concurrent charts distinct and cleans up their indicators on replacement and unmount", async () => {
   vi.stubGlobal("crypto", {});
   const render = (current: TradeMarketResult, second = true) =>
@@ -138,7 +132,6 @@ it("keeps concurrent charts distinct and cleans up their indicators on replaceme
   const types = renderer.register.mock.calls.map(([descriptor]) => descriptor.type);
   expect(new Set(types).size).toBe(2);
   const initialInstances = renderer.create.mock.results.map((result) => result.value);
-
   await act(async () => root.render(render({ ...history, symbol: "OTHER" })));
   await act(async () => vi.dynamicImportSettled());
   expect(initialInstances[0].destroy).toHaveBeenCalledOnce();
@@ -146,7 +139,6 @@ it("keeps concurrent charts distinct and cleans up their indicators on replaceme
   expect(renderer.unregister).toHaveBeenCalledExactlyOnceWith(types[0]);
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(container.querySelectorAll('[aria-busy="false"]')).toHaveLength(2);
-
   await act(async () => root.render(null));
   for (const { value } of renderer.create.mock.results) {
     expect(value.destroy).toHaveBeenCalledOnce();

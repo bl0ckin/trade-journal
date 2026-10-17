@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   save: vi.fn(),
   post: vi.fn(),
 }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/components/filter-bar", () => ({
   FilterBar: () => null,
   useFilters: () => ({
@@ -21,13 +22,15 @@ vi.mock("@/components/filter-bar", () => ({
 }));
 vi.mock("@/lib/use-api", () => ({
   postJson: (...args: unknown[]) => state.post(...args),
-  useApi: () => ({
-    data: {
-      metrics: { ...computeMetrics([]), closedTrades: 1 },
-      trades: [],
-      intraday: [],
-      note: "Original note",
-    },
+  useApi: (url: string) => ({
+    data: url.startsWith("/api/journal?")
+      ? { days: [] }
+      : {
+          metrics: { ...computeMetrics([]), closedTrades: 1 },
+          trades: [],
+          intraday: [],
+          note: "Original note",
+        },
   }),
 }));
 vi.mock("@/lib/use-autosave", () => ({

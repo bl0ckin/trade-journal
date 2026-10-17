@@ -66,7 +66,6 @@ const saveButton = () =>
   Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
     (b) => b.textContent === "Save AI settings",
   )!;
-
 it("saves an OpenAI-compatible server with a model and no key", async () => {
   await render(settings("compatible"));
   expect(container.textContent).toContain("API key (optional)");
@@ -87,7 +86,6 @@ it("saves an OpenAI-compatible server with a model and no key", async () => {
   );
   expect(state.refresh).toHaveBeenCalled();
 });
-
 it("shows the saved server and warns that a new URL drops its saved key", async () => {
   await render(
     settings("compatible", {
@@ -103,7 +101,6 @@ it("shows the saved server and warns that a new URL drops its saved key", async 
   expect(container.textContent).toContain("Remove OpenAI-compatible key");
   expect(container.textContent).toContain("Server configured");
 });
-
 it("keeps hosted providers free of a server URL", async () => {
   await render(
     settings("openai", {

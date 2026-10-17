@@ -3,7 +3,6 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { netReturnOnEntry } from "@luxalgo/journal-core";
-
 const originalDir = process.env.JOURNAL_DATA_DIR;
 const scratch = mkdtempSync(join(tmpdir(), "journal-trade-roi-"));
 process.env.JOURNAL_DATA_DIR = scratch;
@@ -11,7 +10,6 @@ const { db, accounts, trades, settings } = await import("../src/db");
 const { setSetting } = await import("../src/server/settings");
 const { GET } = await import("../src/app/api/trades/route");
 const { GET: detail } = await import("../src/app/api/trades/[key]/route");
-
 beforeEach(() => {
   vi.stubEnv("JOURNAL_PASSWORD", "");
   db.delete(trades).run();
@@ -47,7 +45,6 @@ beforeEach(() => {
     )
     .run();
 });
-
 afterAll(() => {
   db.$client.close();
   vi.unstubAllEnvs();
@@ -55,7 +52,6 @@ afterAll(() => {
   else process.env.JOURNAL_DATA_DIR = originalDir;
   rmSync(scratch, { recursive: true, force: true });
 });
-
 it.each(["", "view=list"])(
   "provides matching ROI inputs on the list and detail APIs (%s)",
   async (query) => {
@@ -78,7 +74,6 @@ it.each(["", "view=list"])(
     }
   },
 );
-
 it("keeps multipliers attached to their symbols after filtering", async () => {
   const response = await GET(new Request("http://localhost/api/trades?view=list&symbol=SPREAD"));
   const body = await response.json();

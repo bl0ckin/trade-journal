@@ -7,7 +7,6 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { BOOTSTRAP_SQL } from "../src/db/bootstrap";
-
 // `next build` opens the journal from several worker processes at once. Each child
 // here loads the real bootstrap module and spins until a shared start time, so their
 // first-run setup overlaps the way build workers do.
@@ -23,7 +22,6 @@ openJournalDatabase(file).close();
 `;
 const scratch = mkdtempSync(join(tmpdir(), "journal-concurrent-init-"));
 const PROCESSES = 12;
-
 async function openConcurrently(file: string) {
   const start = Date.now() + 1500;
   const results = await Promise.allSettled(
@@ -56,13 +54,14 @@ async function openConcurrently(file: string) {
       (sqlite.pragma(`table_info(${table})`) as { name: string }[]).map((column) => column.name);
     expect(columns("accounts")).toContain("ibkr_sync_time_zone");
     expect(columns("executions")).toContain("import_metadata_json");
-    expect(columns("folders")).toContain("deleted_at");
+    expect(columns("trades")).toEqual(
+      expect.arrayContaining(["trade_quality", "confidence", "emotional_state"]),
+    );
     expect(sqlite.prepare("SELECT count(*) AS n FROM folders").get()).toEqual({ n: 5 });
   } finally {
     sqlite.close();
   }
 }
-
 it.each([1, 2, 3])(
   "creates a fresh journal from concurrent processes without SQLITE_BUSY (batch %i)",
   async (round) => {
@@ -70,7 +69,6 @@ it.each([1, 2, 3])(
   },
   60_000,
 );
-
 it("upgrades a legacy rollback-journal database from concurrent processes", async () => {
   const file = join(scratch, "legacy.db");
   const legacy = new Database(file);
@@ -84,5 +82,4 @@ it("upgrades a legacy rollback-journal database from concurrent processes", asyn
   legacy.close();
   await openConcurrently(file);
 }, 60_000);
-
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));

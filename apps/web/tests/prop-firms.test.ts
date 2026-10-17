@@ -266,7 +266,7 @@ describe("prop account lifecycle and corrections", () => {
     mutateProp(account({ program: "evaluation" }));
     expect(() => mutateProp(payout())).toThrow("funded");
   });
-  it("requires correction reasons and optimistic revisions, while retries of new records are idempotent", () => {
+  it("records a default reason for corrections, requires current revisions, and retries of new records are idempotent", () => {
     mutateProp(account());
     mutateProp(account());
     mutateProp(entry());
@@ -274,14 +274,18 @@ describe("prop account lifecycle and corrections", () => {
     expect(propData().accounts).toHaveLength(1);
     expect(propData().entries).toHaveLength(1);
     const auditBefore = db.select().from(propAudit).all().length;
-    expect(() => mutateProp(entry({ revision: 1, amount: "120" }))).toThrow("reason");
-    expect(totals().spent).toBe(10000);
-    expect(db.select().from(propAudit).all()).toHaveLength(auditBefore);
-    mutateProp(entry({ revision: 1, amount: "120", reason: "Correct invoice" }));
+    // Reasons are optional: a correction without one is saved and audited as "Edited".
+    mutateProp(entry({ revision: 1, amount: "120" }));
+    expect(totals().spent).toBe(12000);
+    const audit = db.select().from(propAudit).all();
+    expect(audit).toHaveLength(auditBefore + 1);
+    expect(audit.some((row) => row.reason === "Edited")).toBe(true);
+    // The revision moved on, so a stale edit is still rejected and changes nothing.
     expect(() => mutateProp(entry({ revision: 1, amount: "150", reason: "Stale edit" }))).toThrow(
       PropConflict,
     );
     expect(totals().spent).toBe(12000);
+    expect(db.select().from(propAudit).all()).toHaveLength(auditBefore + 1);
   });
   it("enforces refund caps, chronology, and dependencies on void and restore", () => {
     mutateProp(account());

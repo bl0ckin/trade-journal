@@ -9,6 +9,7 @@ const scratch = mkdtempSync(join(tmpdir(), "journal-flex-xml-"));
 vi.stubEnv("JOURNAL_DATA_DIR", scratch);
 vi.stubEnv("JOURNAL_PASSWORD", "");
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined }) }));
+
 const { db, accounts, executions, trades, settings } = await import("../src/db");
 const { encryptJson } = await import("../src/server/crypto");
 const { setSetting } = await import("../src/server/settings");

@@ -3,7 +3,6 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import TradesPage from "../src/app/trades/page";
-
 const state = vi.hoisted(() => ({ trades: [] as Record<string, unknown>[] }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/components/filter-bar", () => ({
@@ -14,7 +13,6 @@ vi.mock("@/lib/use-api", () => ({
   useApi: () => ({ data: { trades: state.trades, timeZone: "UTC" }, refresh: vi.fn() }),
   postJson: vi.fn(),
 }));
-
 let container: HTMLDivElement, root: Root;
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -51,7 +49,6 @@ const roiValues = () => {
   const index = headers.findIndex((header) => header.textContent === "Net ROI");
   return [...container.querySelectorAll("tbody tr")].map((row) => row.children[index]!.textContent);
 };
-
 it("shows the actual MNQ and option returns instead of inflating them by their multipliers", async () => {
   await render([
     { assetClass: "futures", avgEntry: 31157.25, quantity: 4, contractMultiplier: 2, netPnl: 283 },
@@ -59,7 +56,6 @@ it("shows the actual MNQ and option returns instead of inflating them by their m
   ]);
   expect(roiValues()).toEqual(["0.11%", "-0.53%"]);
 });
-
 it("distinguishes an unknown return from a true zero and supports negative entries", async () => {
   await render([
     { assetClass: "futures" },
@@ -69,7 +65,6 @@ it("distinguishes an unknown return from a true zero and supports negative entri
   ]);
   expect(roiValues()).toEqual(["–", "–", "-10.00%", "0.00%"]);
 });
-
 it("sorts numerical returns in both directions with unavailable returns last", async () => {
   await render([
     { assetClass: "option" },
