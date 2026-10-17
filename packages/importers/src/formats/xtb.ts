@@ -294,6 +294,9 @@ const closedRow = (
     preserveFee: true,
     ...(reportedGrossPnl !== undefined ? { reportedGrossPnl } : {}),
   };
+  // importMetadata supersedes the reconstruction facts that tradeToExecutions adds here.
+  delete entry.reconstruction;
+  delete exit.reconstruction;
   return { entry, exit };
 };
 
