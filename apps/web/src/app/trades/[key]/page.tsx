@@ -3,10 +3,17 @@ import { AiNotice } from "@/components/ai-notice";
 import { Checkbox } from "@/components/ui/checkbox";
 
 import { use, useEffect, useMemo, useRef, useState } from "react";
-import { Sparkles } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Check, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { netReturnOnEntry } from "@luxalgo/journal-core";
 import { FilterBar } from "@/components/filter-bar";
 import { Pnl } from "@/components/pnl";
+import { AddTradeDialog } from "@/components/add-trade-dialog";
+import { ScoreSlider } from "@/components/score-slider";
+import { TagPicker } from "@/components/tag-picker";
+import { ChipSelect } from "@/components/chip-select";
+import { EMOTIONAL_STATES, parseEmotions } from "@/lib/emotions";
+import { MARKETS, resolveMarket } from "@/lib/markets";
 import { MonetaryValue, MonetaryField } from "@/components/privacy";
 import { TradeMarketData } from "@/components/trade-market-data";
 import { TradeNavigation } from "@/components/trade-navigation";
@@ -34,6 +41,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { RichEditor, type RichEditorHandle } from "@/components/rich-editor";
+import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { Attachments } from "@/components/attachments";
 import { ReviewExport } from "@/components/review-export";
 import { RuleChecklist } from "@/components/rule-checklist";
@@ -42,6 +50,7 @@ import { postJson, useApi } from "@/lib/use-api";
 import { fmtDuration, fmtMoney, fmtNumber, fmtPercent } from "@/lib/utils";
 import { tradeKeyFromSegment } from "@/lib/trade-links";
 import { formatTimestamp } from "@/lib/timezone";
+import { isoToZonedInput, nowZonedInput, zonedInputToIso } from "@/lib/datetime-input";
 
 interface TradeDetail {
   riskAmount: number | null;
@@ -73,6 +82,9 @@ interface TradeDetail {
   stopLoss: number | null;
   profitTarget: number | null;
   reviewedAt: string | null;
+  tradeQuality: number | null;
+  confidence: number | null;
+  emotionalState: string | null;
 }
 
 interface ExecutionRow {
@@ -82,6 +94,7 @@ interface ExecutionRow {
   price: number;
   fee: number;
   executedAt: string;
+  source?: "sync" | "import" | "manual";
 }
 
 export default function TradePage({ params }: { params: Promise<{ key: string }> }) {
@@ -174,7 +187,13 @@ function TradeView({ tradeKey }: { tradeKey: string }) {
               </div>
               <Badge
                 variant={
-                  trade.status === "win" ? "profit" : trade.status === "loss" ? "loss" : "secondary"
+                  trade.status === "win"
+                    ? "profit"
+                    : trade.status === "loss"
+                      ? "loss"
+                      : trade.status === "open"
+                        ? "open"
+                        : "secondary"
                 }
                 className="text-sm"
               >
@@ -202,6 +221,13 @@ function TradeView({ tradeKey }: { tradeKey: string }) {
             </CardContent>
           </Card>
 
+          <ExecutionsCard
+            trade={trade}
+            executions={executions}
+            timeZone={timeZone}
+            onSaved={refresh}
+          />
+
           <TradeMarketData trade={trade} executions={executions} />
 
           {runningPnl.length > 1 && (
@@ -215,49 +241,6 @@ function TradeView({ tradeKey }: { tradeKey: string }) {
               </CardContent>
             </Card>
           )}
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Executions</CardTitle>
-              <p className="text-xs text-muted-foreground">Times in {timeZone}</p>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Time</TableHead>
-                    <TableHead>Side</TableHead>
-                    <TableHead>Quantity</TableHead>
-                    <TableHead>Price</TableHead>
-                    <TableHead>Fee</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {executions
-                    .sort((a, b) => a.executedAt.localeCompare(b.executedAt))
-                    .map((execution) => (
-                      <TableRow key={execution.id}>
-                        <TableCell className="text-muted-foreground">
-                          {formatTimestamp(execution.executedAt, timeZone)}
-                        </TableCell>
-                        <TableCell>
-                          <span className={execution.side === "buy" ? "text-profit" : "text-loss"}>
-                            {execution.side === "buy" ? "▲ BUY" : "▼ SELL"}
-                          </span>
-                        </TableCell>
-                        <TableCell className="tnum">{fmtNumber(execution.quantity, 4)}</TableCell>
-                        <TableCell className="tnum">
-                          <MonetaryValue>{fmtNumber(execution.price)}</MonetaryValue>
-                        </TableCell>
-                        <TableCell className="tnum text-muted-foreground">
-                          <MonetaryValue>{fmtMoney(execution.fee)}</MonetaryValue>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
         </div>
 
         <div className="min-w-0 space-y-3">
@@ -320,10 +303,27 @@ function AnnotationsCard({
 }) {
   const [notes, setNotes] = useState(trade.notes ?? "");
   const noteEditor = useRef<RichEditorHandle>(null);
-  const [tags, setTags] = useState((JSON.parse(trade.tagsJson ?? "[]") as string[]).join(", "));
-  const [mistakes, setMistakes] = useState(
-    (JSON.parse(trade.mistakesJson ?? "[]") as string[]).join(", "),
+  const [noteEditing, setNoteEditing] = useState(false);
+  const [tags, setTags] = useState<string[]>(JSON.parse(trade.tagsJson ?? "[]") as string[]);
+  const [mistakes, setMistakes] = useState<string[]>(
+    JSON.parse(trade.mistakesJson ?? "[]") as string[],
   );
+  const [quality, setQuality] = useState<number | null>(trade.tradeQuality);
+  const [confidence, setConfidence] = useState<number | null>(trade.confidence);
+  const [emotions, setEmotions] = useState<string[]>(parseEmotions(trade.emotionalState));
+  const [listError, setListError] = useState("");
+  // Tags, mistakes and emotions save right away, one request after another, so none is lost.
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
+  const saveNow = (body: Record<string, unknown>) => {
+    setListError("");
+    saveQueue.current = saveQueue.current
+      .then(() => onPatch(body))
+      .catch((cause) =>
+        setListError(
+          `Couldn’t save: ${cause instanceof Error ? cause.message : "connection failed"}`,
+        ),
+      );
+  };
   const [stopLoss, setStopLoss] = useState(trade.stopLoss?.toString() ?? "");
   const [profitTarget, setProfitTarget] = useState(trade.profitTarget?.toString() ?? "");
   const { data: playbookData } = useApi<{ playbooks: { id: string; name: string }[] }>(
@@ -334,12 +334,6 @@ function AnnotationsCard({
     status: saveStatus,
     flush,
   } = useAutosave(`/api/trades/${encodeURIComponent(trade.key)}`, "PATCH", () => void onPatch({}));
-
-  const parseList = (value: string) =>
-    value
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean);
 
   return (
     <Card>
@@ -414,27 +408,87 @@ function AnnotationsCard({
         </div>
 
         <div>
-          <label className="text-xs text-muted-foreground">Tags (comma-separated)</label>
-          <Input
+          <label className="text-xs text-muted-foreground">Market</label>
+          <Select
+            value={resolveMarket(trade.assetClass, trade.symbol) ?? "none"}
+            onValueChange={(value) => void onPatch({ market: value === "none" ? null : value })}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Not set" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Not set</SelectItem>
+              {MARKETS.map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs text-muted-foreground">Tags</label>
+          <TagPicker
+            kind="tag"
+            noun="tag"
             value={tags}
-            onChange={(event) => {
-              setTags(event.target.value);
-              debounced({ tags: parseList(event.target.value) });
+            onChange={(next) => {
+              setTags(next);
+              saveNow({ tags: next });
             }}
-            placeholder="breakout, A+ setup"
           />
         </div>
         <div>
-          <label className="text-xs text-muted-foreground">Mistakes</label>
-          <Input
+          <label className="mb-1 block text-xs text-muted-foreground">Mistakes</label>
+          <TagPicker
+            kind="mistake"
+            noun="mistake"
             value={mistakes}
-            onChange={(event) => {
-              setMistakes(event.target.value);
-              debounced({ mistakes: parseList(event.target.value) });
+            onChange={(next) => {
+              setMistakes(next);
+              saveNow({ mistakes: next });
             }}
-            placeholder="chased entry, moved stop"
           />
         </div>
+
+        <ScoreSlider
+          label="Trade quality"
+          lowLabel="Poor execution"
+          highLabel="Textbook"
+          value={quality}
+          onChange={(next) => {
+            setQuality(next);
+            debounced({ tradeQuality: next });
+          }}
+        />
+        <ScoreSlider
+          label="Confidence"
+          lowLabel="Doubtful"
+          highLabel="Certain"
+          value={confidence}
+          onChange={(next) => {
+            setConfidence(next);
+            debounced({ confidence: next });
+          }}
+        />
+        <div>
+          <label className="mb-1 block text-xs text-muted-foreground">Emotional state</label>
+          <ChipSelect
+            options={EMOTIONAL_STATES}
+            value={emotions}
+            addLabel="Add emotion"
+            onChange={(next) => {
+              setEmotions(next);
+              saveNow({ emotionalStates: next });
+            }}
+          />
+        </div>
+        {listError && (
+          <p role="alert" className="text-xs text-destructive">
+            {listError}
+          </p>
+        )}
 
         <div>
           <div className="mb-1 flex items-center justify-between">
@@ -450,6 +504,7 @@ function AnnotationsCard({
           </div>
           <RichEditor
             editorRef={noteEditor}
+            onModeChange={(next) => setNoteEditing(next === "edit")}
             value={notes}
             onChange={(value) => {
               setNotes(value);
@@ -462,6 +517,7 @@ function AnnotationsCard({
               Save now
             </Button>
           </div>
+          <Attachments type="trade" id={trade.key} editable={noteEditing} />
           <ReviewExport
             containsFinancialData
             document={{
@@ -472,14 +528,483 @@ function AnnotationsCard({
                 `Entry: ${trade.avgEntry} | Exit: ${trade.avgExit ?? "Open"}`,
                 `Net P&L: ${trade.netPnl.toFixed(2)} | Fees: ${trade.fees.toFixed(2)}`,
                 `Stop: ${stopLoss || "Unspecified"} | Target: ${profitTarget || "Unspecified"}`,
-                `Tags: ${tags || "None"} | Mistakes: ${mistakes || "None"}`,
+                `Tags: ${tags.join(", ") || "None"} | Mistakes: ${mistakes.join(", ") || "None"}`,
+                `Trade quality: ${quality ?? "Not set"}/10 | Confidence: ${confidence ?? "Not set"}/10 | Emotional state: ${emotions.join(", ") || "Not set"}`,
                 "",
                 notes,
               ],
             }}
           />
-          <Attachments type="trade" id={trade.key} />
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+interface EditRow {
+  id?: string;
+  side: "buy" | "sell";
+  quantity: string;
+  price: string;
+  fee: string;
+  datetime: string;
+  originalDatetime?: string;
+  originalIso?: string;
+  touched: boolean;
+}
+
+function ExecutionsCard({
+  trade,
+  executions,
+  timeZone,
+  onSaved,
+}: {
+  trade: TradeDetail;
+  executions: ExecutionRow[];
+  timeZone: string;
+  onSaved: () => void;
+}) {
+  const router = useRouter();
+  const [rows, setRows] = useState<EditRow[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const sorted = [...executions].sort((a, b) => a.executedAt.localeCompare(b.executedAt));
+  const synced = executions.some((execution) => execution.source === "sync");
+  const [close, setClose] = useState<{
+    quantity: string;
+    price: string;
+    fee: string;
+    datetime: string;
+    touched: boolean;
+  } | null>(null);
+  const openQty = Number(
+    Math.abs(
+      sorted.reduce((sum, e) => sum + (e.side === "buy" ? e.quantity : -e.quantity), 0),
+    ).toFixed(8),
+  );
+  const closeSide = trade.direction === "long" ? "sell" : "buy";
+
+  const putExecutions = async (
+    payload: Array<{
+      id?: string;
+      side: "buy" | "sell";
+      quantity: number;
+      price: number;
+      fee: number;
+      executedAt: string;
+    }>,
+  ) => {
+    setBusy(true);
+    try {
+      const result = await postJson<{ key: string }>(
+        `/api/trades/${encodeURIComponent(trade.key)}/executions`,
+        { executions: payload },
+        "PUT",
+      );
+      setRows(null);
+      setClose(null);
+      if (result.key !== trade.key)
+        router.replace(`/trades/${encodeURIComponent(result.key)}${window.location.search}`);
+      else onSaved();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Couldn’t save the executions.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startClosing = () => {
+    setError("");
+    setRows(null);
+    setClose({
+      quantity: String(openQty),
+      price: "",
+      fee: "",
+      datetime: nowZonedInput(timeZone),
+      touched: false,
+    });
+  };
+
+  const submitClose = async () => {
+    if (!close || busy) return;
+    setError("");
+    const quantity = Number(close.quantity);
+    const price = Number(close.price);
+    const fee = close.fee === "" ? 0 : Number(close.fee);
+    const executedAt = close.touched
+      ? zonedInputToIso(close.datetime, timeZone)
+      : new Date().toISOString();
+    if (!(quantity > 0) || close.price.trim() === "" || !Number.isFinite(price) || !Number.isFinite(fee) || !executedAt) {
+      setError("Enter the quantity, the exit price, and a valid date and time.");
+      return;
+    }
+    if (quantity > openQty + 1e-9) {
+      setError(
+        `The open position is ${fmtNumber(openQty, 4)}. Closing more would open a new position the other way.`,
+      );
+      return;
+    }
+    await putExecutions([
+      ...sorted.map((e) => ({
+        id: e.id,
+        side: e.side,
+        quantity: e.quantity,
+        price: e.price,
+        fee: e.fee,
+        executedAt: e.executedAt,
+      })),
+      { side: closeSide, quantity, price, fee, executedAt },
+    ]);
+  };
+
+  const startEditing = () => {
+    setError("");
+    setClose(null);
+    setRows(
+      sorted.map((execution) => {
+        const datetime = isoToZonedInput(execution.executedAt, timeZone);
+        return {
+          id: execution.id,
+          side: execution.side,
+          quantity: String(execution.quantity),
+          price: String(execution.price),
+          fee: String(execution.fee),
+          datetime,
+          originalDatetime: datetime,
+          originalIso: execution.executedAt,
+          touched: true,
+        };
+      }),
+    );
+  };
+
+  const setRow = (index: number, patch: Partial<EditRow>) =>
+    setRows((current) =>
+      current ? current.map((row, i) => (i === index ? { ...row, ...patch } : row)) : current,
+    );
+
+  const addRow = () =>
+    setRows((current) => {
+      if (!current) return current;
+      const last = current[current.length - 1];
+      return [
+        ...current,
+        {
+          side: last?.side === "buy" ? "sell" : "buy",
+          // A second execution usually closes the first, so start from its quantity.
+          quantity: current.length === 1 ? current[0]!.quantity : "",
+          price: "",
+          fee: "",
+          datetime: nowZonedInput(timeZone),
+          touched: false,
+        },
+      ];
+    });
+
+  const deleteTrade = async () => {
+    if (
+      !confirm(
+        `Delete this ${trade.symbol} trade and its ${executions.length} execution${executions.length === 1 ? "" : "s"}? This cannot be undone.`,
+      )
+    )
+      return;
+    setBusy(true);
+    setError("");
+    try {
+      await postJson(`/api/trades/${encodeURIComponent(trade.key)}`, undefined, "DELETE");
+      router.push("/trades");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Couldn’t delete the trade.");
+      setBusy(false);
+    }
+  };
+
+  const save = async () => {
+    if (!rows || busy) return;
+    setError("");
+    const payload = [];
+    for (const [index, row] of rows.entries()) {
+      const quantity = Number(row.quantity);
+      const price = Number(row.price);
+      const fee = row.fee === "" ? 0 : Number(row.fee);
+      let executedAt: string | null;
+      if (!row.id && !row.touched) executedAt = new Date().toISOString();
+      else if (row.originalIso && row.datetime === row.originalDatetime)
+        executedAt = row.originalIso;
+      else executedAt = zonedInputToIso(row.datetime, timeZone);
+      if (
+        !(quantity > 0) ||
+        row.price.trim() === "" ||
+        !Number.isFinite(price) ||
+        !Number.isFinite(fee) ||
+        !executedAt
+      ) {
+        setError(`Execution ${index + 1} needs a date and time, a quantity above 0, and a price.`);
+        return;
+      }
+      payload.push({ id: row.id, side: row.side, quantity, price, fee, executedAt });
+    }
+    await putExecutions(payload);
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-start justify-between gap-2">
+        <div>
+          <CardTitle>Executions</CardTitle>
+          <p className="text-xs text-muted-foreground">Times in {timeZone}</p>
+        </div>
+        {!rows && (
+          <div className="flex flex-wrap justify-end gap-2">
+            {trade.status === "open" && !synced && openQty > 0 && !close && (
+              <Button size="sm" onClick={startClosing}>
+                <Check />
+                Close trade
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={startEditing}
+              disabled={synced}
+              title={synced ? "Broker-synced executions can't be edited" : undefined}
+            >
+              <Pencil />
+              Edit executions
+            </Button>
+            <AddTradeDialog
+              duplicate
+              onSaved={onSaved}
+              initial={{
+                accountId: trade.accountId,
+                symbol: trade.symbol,
+                side: trade.direction === "long" ? "buy" : "sell",
+                quantity: trade.quantity,
+              }}
+            />
+            <Button variant="ghost" size="sm" onClick={() => void deleteTrade()} disabled={busy}>
+              <Trash2 />
+              Delete trade
+            </Button>
+          </div>
+        )}
+      </CardHeader>
+      <CardContent>
+        {rows ? (
+          <fieldset disabled={busy} className="min-w-0 space-y-2">
+            <div className="hidden gap-2 px-1 text-xs text-muted-foreground sm:grid sm:grid-cols-[1.7fr_0.9fr_1fr_1fr_0.8fr_2rem]">
+              <span>Date & time</span>
+              <span>Side</span>
+              <span>Quantity</span>
+              <span>Price</span>
+              <span>Fee</span>
+              <span />
+            </div>
+            {rows.map((row, index) => (
+              <div
+                key={row.id ?? `new-${index}`}
+                className="grid gap-2 rounded-lg border p-2 sm:grid-cols-[1.7fr_0.9fr_1fr_1fr_0.8fr_2rem] sm:items-center sm:border-0 sm:p-0"
+              >
+                <DateTimePicker
+                  seconds
+                  label={`Execution ${index + 1} date and time`}
+                  value={row.datetime}
+                  getNow={() => nowZonedInput(timeZone)}
+                  onValueChange={(value) => setRow(index, { datetime: value, touched: true })}
+                />
+                <Select
+                  value={row.side}
+                  onValueChange={(value) => setRow(index, { side: value as "buy" | "sell" })}
+                >
+                  <SelectTrigger aria-label={`Execution ${index + 1} side`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="buy">Buy</SelectItem>
+                    <SelectItem value="sell">Sell</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  aria-label={`Execution ${index + 1} quantity`}
+                  placeholder="qty"
+                  inputMode="decimal"
+                  value={row.quantity}
+                  onChange={(event) => setRow(index, { quantity: event.target.value })}
+                />
+                <MonetaryField>
+                  <Input
+                    aria-label={`Execution ${index + 1} price`}
+                    placeholder="price"
+                    inputMode="decimal"
+                    value={row.price}
+                    onChange={(event) => setRow(index, { price: event.target.value })}
+                  />
+                </MonetaryField>
+                <MonetaryField>
+                  <Input
+                    aria-label={`Execution ${index + 1} fee`}
+                    placeholder="fee"
+                    inputMode="decimal"
+                    value={row.fee}
+                    onChange={(event) => setRow(index, { fee: event.target.value })}
+                  />
+                </MonetaryField>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  aria-label={`Remove execution ${index + 1}`}
+                  disabled={rows.length <= 1}
+                  onClick={() => setRows(rows.filter((_, i) => i !== index))}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+            {error && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Button variant="outline" size="sm" onClick={addRow}>
+                <Plus />
+                Add execution
+              </Button>
+              <Button size="sm" onClick={() => void save()} disabled={busy}>
+                {busy ? "Saving…" : "Save executions"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setRows(null);
+                  setError("");
+                }}
+                disabled={busy}
+              >
+                Cancel
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              P&L, status and duration are recalculated when you save. Your notes, tags and rating
+              stay with the trade.
+            </p>
+          </fieldset>
+        ) : (
+          <>
+          {close && (
+            <fieldset disabled={busy} className="mb-3 grid gap-2 rounded-lg border p-3">
+              <legend className="px-1 text-xs text-muted-foreground">
+                Close trade: {closeSide === "sell" ? "sell" : "buy"} to exit
+              </legend>
+              <div className="grid gap-2 sm:grid-cols-4">
+                <label className="grid gap-1 text-xs text-muted-foreground sm:col-span-2">
+                  Date & time
+                  <DateTimePicker
+                    seconds
+                    label="Close date and time"
+                    value={close.datetime}
+                    getNow={() => nowZonedInput(timeZone)}
+                    onValueChange={(value) => setClose({ ...close, datetime: value, touched: true })}
+                  />
+                </label>
+                <label className="grid gap-1 text-xs text-muted-foreground">
+                  Quantity
+                  <Input
+                    inputMode="decimal"
+                    value={close.quantity}
+                    onChange={(event) => setClose({ ...close, quantity: event.target.value })}
+                  />
+                </label>
+                <label className="grid gap-1 text-xs text-muted-foreground">
+                  Exit price
+                  <MonetaryField>
+                    <Input
+                      autoFocus
+                      inputMode="decimal"
+                      value={close.price}
+                      onChange={(event) => setClose({ ...close, price: event.target.value })}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") void submitClose();
+                      }}
+                    />
+                  </MonetaryField>
+                </label>
+              </div>
+              <div className="flex flex-wrap items-end gap-2">
+                <label className="grid gap-1 text-xs text-muted-foreground">
+                  Fee (optional)
+                  <MonetaryField>
+                    <Input
+                      className="w-28"
+                      inputMode="decimal"
+                      value={close.fee}
+                      onChange={(event) => setClose({ ...close, fee: event.target.value })}
+                    />
+                  </MonetaryField>
+                </label>
+                <Button size="sm" onClick={() => void submitClose()} disabled={busy}>
+                  {busy ? "Saving…" : "Close trade"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setClose(null);
+                    setError("");
+                  }}
+                  disabled={busy}
+                >
+                  Cancel
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Quantity starts at the full open position. Close less to scale out and keep the
+                rest open.
+              </p>
+            </fieldset>
+          )}
+          {error && (
+            <p role="alert" className="mb-2 text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Time</TableHead>
+                <TableHead>Side</TableHead>
+                <TableHead>Quantity</TableHead>
+                <TableHead>Price</TableHead>
+                <TableHead>Fee</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {sorted.map((execution) => (
+                <TableRow key={execution.id}>
+                  <TableCell className="text-muted-foreground">
+                    {formatTimestamp(execution.executedAt, timeZone)}
+                  </TableCell>
+                  <TableCell>
+                    <span className={execution.side === "buy" ? "text-profit" : "text-loss"}>
+                      {execution.side === "buy" ? "▲ BUY" : "▼ SELL"}
+                    </span>
+                  </TableCell>
+                  <TableCell className="tnum">{fmtNumber(execution.quantity, 4)}</TableCell>
+                  <TableCell className="tnum">
+                    <MonetaryValue>{fmtNumber(execution.price)}</MonetaryValue>
+                  </TableCell>
+                  <TableCell className="tnum text-muted-foreground">
+                    <MonetaryValue>{fmtMoney(execution.fee)}</MonetaryValue>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          </>
+        )}
       </CardContent>
     </Card>
   );

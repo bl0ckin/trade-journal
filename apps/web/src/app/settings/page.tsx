@@ -10,6 +10,7 @@ import {
   SlidersHorizontal,
   Sparkles,
 } from "lucide-react";
+import { RiskLimitSettings } from "@/components/risk-limit-settings";
 import { JournalDefaultSettings } from "@/components/journal-default-settings";
 import { ContractMultiplierSettings, TimeZoneSettings } from "@/components/journal-settings";
 import { MarketDataSettings } from "@/components/market-data-settings";
@@ -169,6 +170,7 @@ function Settings() {
                 {id === "general" && <TimeZoneSettings />}
                 {id === "trading" && (
                   <>
+                    <RiskLimitSettings />
                     <ContractMultiplierSettings />
                     <JournalDefaultSettings />
                   </>

@@ -1,0 +1,57 @@
+/* Notebook layout: wider list, a folder rail from tablet width up, and an expandable editor. */
+.notebook-workspace.nb {
+  background: var(--background);
+}
+@media (min-width: 768px) {
+  .notebook-workspace.nb {
+    grid-template-columns: var(--nb-list, 240px) minmax(0, 1fr);
+  }
+}
+@media (min-width: 1024px) {
+  .notebook-workspace.nb {
+    grid-template-columns: var(--nb-folders, 210px) var(--nb-list, 240px) minmax(0, 1fr);
+  }
+  .notebook-workspace.nb .notebook-folders {
+    display: block;
+  }
+}
+.notebook-workspace.nb[data-focus="true"] {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+.notebook-workspace.nb[data-focus="true"] .notebook-folders,
+.notebook-workspace.nb[data-focus="true"] .notebook-list {
+  display: none !important;
+}
+
+/* Reading and writing surface */
+.nb-prose .journal-markdown {
+  font-size: 1.0625rem;
+  line-height: 1.85;
+}
+.nb-prose .journal-markdown h1 {
+  font-size: 1.75rem;
+  margin-top: 1.6em;
+}
+.nb-prose .journal-markdown h2 {
+  font-size: 1.4rem;
+  margin-top: 1.5em;
+}
+.nb-prose .journal-markdown h3 {
+  font-size: 1.15rem;
+  margin-top: 1.3em;
+}
+.nb-prose .journal-markdown p,
+.nb-prose .journal-markdown ul,
+.nb-prose .journal-markdown ol {
+  margin-top: 0.85em;
+}
+.nb-prose .journal-markdown blockquote {
+  border-left: 3px solid var(--brand, currentColor);
+  padding-left: 1rem;
+  opacity: 0.85;
+}
+.nb-prose textarea {
+  min-height: 55vh;
+  font-size: 1rem;
+  line-height: 1.75;
+}

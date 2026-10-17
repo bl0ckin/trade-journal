@@ -1,14 +1,27 @@
 import { eq, inArray } from "drizzle-orm";
 import { db, trades } from "@/db";
 import { bad, handler, ok } from "@/server/api";
-import { deleteExecutionsForTrades } from "@/server/executions";
+import { deleteExecutionsForTrades, setTradesMarket } from "@/server/executions";
+import { isMarket } from "@/lib/markets";
 import { nowIso } from "@/server/ids";
 
 interface BulkBody {
   keys: string[];
-  action: "review" | "unreview" | "tag" | "untag" | "playbook" | "delete";
+  action:
+    | "review"
+    | "unreview"
+    | "tag"
+    | "untag"
+    | "mistake"
+    | "unmistake"
+    | "playbook"
+    | "market"
+    | "delete";
   tag?: string;
+  mistake?: string;
   playbookId?: string | null;
+  /** For action "market": a market value, or null to clear it. */
+  market?: string | null;
 }
 
 export const POST = handler(async (request: Request) => {
@@ -38,11 +51,31 @@ export const POST = handler(async (request: Request) => {
       }
       return ok({ updated: rows.length });
     }
+    case "mistake":
+    case "unmistake": {
+      if (!body.mistake) return bad("mistake is required");
+      for (const row of rows) {
+        const mistakes = new Set<string>(
+          row.mistakesJson ? (JSON.parse(row.mistakesJson) as string[]) : [],
+        );
+        if (body.action === "mistake") mistakes.add(body.mistake);
+        else mistakes.delete(body.mistake);
+        db.update(trades)
+          .set({ mistakesJson: JSON.stringify([...mistakes]) })
+          .where(eq(trades.key, row.key))
+          .run();
+      }
+      return ok({ updated: rows.length });
+    }
     case "playbook":
       db.update(trades)
         .set({ playbookId: body.playbookId ?? null })
         .where(inArray(trades.key, body.keys))
         .run();
+      return ok({ updated: rows.length });
+    case "market":
+      if (body.market != null && !isMarket(body.market)) return bad("Unknown market");
+      setTradesMarket(rows, body.market ?? null);
       return ok({ updated: rows.length });
     case "delete": {
       const byAccount = new Map<string, string[]>();

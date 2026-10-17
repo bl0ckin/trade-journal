@@ -9,6 +9,7 @@ import { THEME_INIT_SCRIPT } from "@/lib/theme";
 
 export const metadata: Metadata = {
   title: "Trade Journal",
+  icons: { icon: [{ url: "/icon.svg", type: "image/svg+xml" }] },
   description:
     "The open-source trade journal — broker sync, deep analytics, daily journaling, and AI-native reflection. Self-hosted, free forever.",
 };

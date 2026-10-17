@@ -1,8 +1,10 @@
 import { eq } from "drizzle-orm";
-import { accounts, db, executions, trades } from "@/db";
+import { accounts, db } from "@/db";
 import { bad, handler, ok, requireValue } from "@/server/api";
+import { clearAccountData } from "@/server/account-data";
 import { rebuildAccount } from "@/server/rebuild";
 import { hasSyncedExecutions, isIbkrSyncAccount } from "@/server/ibkr-sync-timezone";
+import { deleteSetting, getPrimaryAccountId, setSetting } from "@/server/settings";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -13,6 +15,8 @@ interface PatchBody {
   initialBalance?: number;
   profitCalcMethod?: "fifo" | "lifo" | "wavg";
   autoSync?: boolean;
+  /** Make this the account the Add trade form picks automatically (false clears it). */
+  primary?: boolean;
 }
 
 export const PATCH = handler(async (request: Request, { params }: Params) => {
@@ -21,6 +25,14 @@ export const PATCH = handler(async (request: Request, { params }: Params) => {
   if (!account) return bad("Account not found", 404);
 
   const body = (await request.json()) as PatchBody;
+  if (body.primary !== undefined) {
+    requireValue(typeof body.primary === "boolean", "Invalid primary value.");
+    if (body.primary) {
+      requireValue(account.kind !== "sync", "Choose a manual or import account as primary.");
+      requireValue(!account.archivedAt, "Unarchive this account before making it primary.");
+      setSetting("primaryAccountId", id);
+    } else if (getPrimaryAccountId() === id) deleteSetting("primaryAccountId");
+  }
   const patch: Partial<typeof accounts.$inferInsert> = {};
   if (body.name !== undefined) patch.name = body.name;
   if (body.broker !== undefined) patch.broker = body.broker;
@@ -58,10 +70,7 @@ export const PATCH = handler(async (request: Request, { params }: Params) => {
 
 export const DELETE = handler(async (_request: Request, { params }: Params) => {
   const { id } = await params;
-  db.transaction((tx) => {
-    tx.delete(trades).where(eq(trades.accountId, id)).run();
-    tx.delete(executions).where(eq(executions.accountId, id)).run();
-    tx.delete(accounts).where(eq(accounts.id, id)).run();
-  });
+  if (getPrimaryAccountId() === id) deleteSetting("primaryAccountId");
+  clearAccountData(id, { deleteAccount: true });
   return ok({ deleted: true });
 });

@@ -1,6 +1,5 @@
-import { readFilters } from "@luxalgo/journal-core";
 import { bad, handler, ok } from "@/server/api";
-import { getAdjacentTradeKeys, getTradeByKey } from "@/server/trades-query";
+import { getAdjacentTradeKeys, getTradeByKey, readTradeFilters } from "@/server/trades-query";
 
 export const GET = handler(
   async (request: Request, { params }: { params: Promise<{ key: string }> }) => {
@@ -11,7 +10,7 @@ export const GET = handler(
     return ok(
       getAdjacentTradeKeys(
         key,
-        readFilters(search),
+        readTradeFilters(search),
         search.get("tradeScope") === "account" ? row.accountId : undefined,
       ),
     );

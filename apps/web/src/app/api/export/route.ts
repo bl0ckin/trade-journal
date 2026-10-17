@@ -21,8 +21,8 @@ import {
   importSourceAliases,
   importBatches,
 } from "@/db";
-import { readFilters } from "@luxalgo/journal-core";
-import { queryTrades } from "@/server/trades-query";
+import { queryTrades, readTradeFilters } from "@/server/trades-query";
+import { buildTradeCsv } from "@/server/trade-csv";
 import {
   getJournalDefaults,
   getMultipliers,
@@ -41,37 +41,12 @@ export const GET = handler(async (request: Request) => {
   const format = url.searchParams.get("format") ?? "json";
 
   if (format === "csv") {
-    const header =
-      "key,account_id,symbol,direction,status,opened_at,closed_at,quantity,avg_entry,avg_exit,gross_pnl,fees,net_pnl,tags,notes";
-    const escape = (value: unknown): string => {
-      const text = value === null || value === undefined ? "" : String(value);
-      return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-    };
-    const lines = queryTrades(readFilters(url.searchParams)).rows.map((row) =>
-      [
-        row.key,
-        row.accountId,
-        row.symbol,
-        row.direction,
-        row.status,
-        row.openedAt,
-        row.closedAt ?? "",
-        row.quantity,
-        row.avgEntry,
-        row.avgExit ?? "",
-        row.grossPnl,
-        row.fees,
-        row.netPnl,
-        row.tagsJson ?? "[]",
-        row.notes ?? "",
-      ]
-        .map(escape)
-        .join(","),
-    );
-    return new Response([header, ...lines].join("\n"), {
+    const csv = buildTradeCsv(queryTrades(readTradeFilters(url.searchParams)).rows);
+    const stamp = new Date().toISOString().slice(0, 10);
+    return new Response(csv, {
       headers: {
-        "Content-Type": "text/csv",
-        "Content-Disposition": 'attachment; filename="trades.csv"',
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="trades-${stamp}.csv"`,
       },
     });
   }

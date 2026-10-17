@@ -1,27 +1,49 @@
 import { asc, eq } from "drizzle-orm";
-import { accounts, db } from "@/db";
+import { accounts, db, trades } from "@/db";
 import { bad, handler, ok } from "@/server/api";
 import { encryptJson } from "@/server/crypto";
 import { newId, nowIso } from "@/server/ids";
+import { getPrimaryAccountId } from "@/server/settings";
 import { syncAccount } from "@/server/sync";
+
+/** All-time net P&L per account, from the materialized trades. */
+const netPnlByAccount = () => {
+  const totals = new Map<string, number>();
+  for (const row of db.select({ accountId: trades.accountId, netPnl: trades.netPnl }).from(trades).all())
+    totals.set(row.accountId, (totals.get(row.accountId) ?? 0) + row.netPnl);
+  return totals;
+};
 
 export const GET = handler((request: Request) => {
   if (new URL(request.url).searchParams.get("summary") === "1") {
+    const pnl = netPnlByAccount();
     return ok({
+      primaryAccountId: getPrimaryAccountId(),
       accounts: db
         .select({
           id: accounts.id,
           name: accounts.name,
           broker: accounts.broker,
           archivedAt: accounts.archivedAt,
+          currency: accounts.currency,
+          initialBalance: accounts.initialBalance,
+          kind: accounts.kind,
+          autoSync: accounts.autoSync,
+          lastSyncAt: accounts.lastSyncAt,
         })
         .from(accounts)
         .orderBy(asc(accounts.createdAt))
-        .all(),
+        .all()
+        .map((account) => ({
+          ...account,
+          netPnl: pnl.get(account.id) ?? 0,
+          balance: account.initialBalance + (pnl.get(account.id) ?? 0),
+        })),
     });
   }
   const rows = db.select().from(accounts).orderBy(asc(accounts.createdAt)).all();
   return ok({
+    primaryAccountId: getPrimaryAccountId(),
     accounts: rows.map(({ credentialsEnc, ...safe }) => ({
       ...safe,
       connected: credentialsEnc !== null,

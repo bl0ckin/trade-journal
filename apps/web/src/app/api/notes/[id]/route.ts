@@ -18,8 +18,11 @@ export const PATCH = handler(async (request: Request, { params }: Params) => {
   if (!existing) return bad("Note not found", 404);
   const body = (await request.json()) as PatchNoteBody;
   if (body.folderId !== undefined) {
-    const folder = db.select().from(folders).where(eq(folders.id, body.folderId)).get();
-    if (!folder || folder.deletedAt || body.folderId === "all") return bad("Folder not found", 404);
+    // Trade notes and the daily journal are filled from the trades and days themselves.
+    if (["all", "trade-notes", "daily-journal"].includes(body.folderId))
+      return bad("Notes can't be moved into that folder.");
+    if (!db.select().from(folders).where(eq(folders.id, body.folderId)).get())
+      return bad("Folder not found", 404);
   }
   db.update(notes)
     .set({

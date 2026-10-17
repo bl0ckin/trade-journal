@@ -2,7 +2,7 @@
 import { OptionSelect } from "@/components/ui/option-select";
 
 import { HoverHint } from "@/components/ui/tooltip";
-import { Suspense, useState } from "react";
+import { Suspense, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import {
   DIMENSIONS,
@@ -14,7 +14,9 @@ import { FilterBar, useFilters } from "@/components/filter-bar";
 import { FilterFields, Field, fieldClass } from "@/components/filter-fields";
 import { ReviewExport } from "@/components/review-export";
 import { AskJournal } from "@/components/ask-journal";
+import { BehaviourPatterns } from "@/components/behaviour-patterns";
 import { ReportOverview } from "@/components/report-overview";
+import { TabBar } from "@/components/report-charts";
 import { MonetaryValue, usePrivacy } from "@/components/privacy";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -60,22 +62,27 @@ const percent = (n: number | null) => (n === null ? "-" : `${(n * 100).toFixed(1
 const money = (n: number, currency: string) => `${number(n)} ${currency}`;
 function Summary({ data }: { data: Analysis }) {
   const s = data.summary;
+  const tiles: Array<[string, string, (number | null)?]> = [
+    ["Closed trades", String(s.trades)],
+    ["Net P&L", money(s.netPnl, data.currencies[0] ?? "USD"), s.netPnl],
+    ["Win rate", percent(s.winRate)],
+    ["Profit factor", s.noLosses ? "∞" : number(s.profitFactor)],
+    ["Entry volume", number(s.volume)],
+    ["Avg holding time", fmtDuration(s.avgDurationMs)],
+    ["Avg planned R", number(s.avgPlannedR)],
+    ["Avg realized R", number(s.avgRealizedR)],
+  ];
   return (
     <div className="report-summary">
-      <div className="report-summary-grid grid grid-cols-2 gap-4">
-        {[
-          ["Closed trades", String(s.trades)],
-          ["Net P&L", money(s.netPnl, data.currencies[0] ?? "USD")],
-          ["Win rate", percent(s.winRate)],
-          ["Profit factor", s.noLosses ? "∞" : number(s.profitFactor)],
-          ["Entry volume", number(s.volume)],
-          ["Avg holding time", fmtDuration(s.avgDurationMs)],
-          ["Avg planned R", number(s.avgPlannedR)],
-          ["Avg realized R", number(s.avgRealizedR)],
-        ].map(([label, value]) => (
-          <div key={label}>
-            <p className="text-xs text-muted-foreground">{label}</p>
-            <p className="mt-1 break-words text-base font-semibold tabular-nums sm:text-lg">
+      <div className="report-summary-grid grid grid-cols-2 gap-2.5">
+        {tiles.map(([label, value, signed]) => (
+          <div key={label} className="min-w-0 rounded-lg bg-muted/30 px-3 py-2.5">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+            <p
+              className={`mt-1 break-words text-base font-semibold tabular-nums sm:text-lg ${
+                signed === undefined || signed === null ? "" : signed > 0 ? "text-profit" : signed < 0 ? "text-loss" : ""
+              }`}
+            >
               {label === "Net P&L" ? <MonetaryValue>{value}</MonetaryValue> : value}
             </p>
           </div>
@@ -148,11 +155,11 @@ function Breakdown({
           <table className="w-full text-xs">
             <thead>
               <tr>
-                <th className="p-3 text-left">
+                <th className="p-3 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                   {DIMENSIONS[primary]} / {DIMENSIONS[secondary]}
                 </th>
                 {columns.map((c) => (
-                  <th key={c} className="min-w-24 p-2">
+                  <th key={c} className="min-w-24 p-2 text-xs font-medium text-muted-foreground">
                     <GroupLabel dimension={secondary}>{colLabel(c)}</GroupLabel>
                   </th>
                 ))}
@@ -175,7 +182,7 @@ function Breakdown({
                       >
                         <td
                           key={c}
-                          className="border border-background p-2 text-center tabular-nums"
+                          className="rounded-md border-2 border-card p-2 text-center tabular-nums"
                           style={{
                             background: g
                               ? `color-mix(in srgb, ${g.netPnl >= 0 ? "var(--profit-fill)" : "var(--loss)"} ${8 + (Math.abs(g.netPnl) / max) * 35}%, transparent)`
@@ -199,7 +206,7 @@ function Breakdown({
       )}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="text-xs text-muted-foreground">
+          <thead className="text-[11px] uppercase tracking-wide text-muted-foreground">
             <tr>
               {[
                 DIMENSIONS[primary],
@@ -212,7 +219,7 @@ function Breakdown({
                 "Avg realized R",
                 "Avg duration",
               ].map((h) => (
-                <th key={h} className="whitespace-nowrap border-b px-3 py-3 text-left font-medium">
+                <th key={h} className="whitespace-nowrap border-b border-border/70 px-3 py-3 text-left font-medium">
                   {h}
                 </th>
               ))}
@@ -222,7 +229,7 @@ function Breakdown({
             {data.groups.map((g) => (
               <tr
                 key={JSON.stringify([g.row, g.column])}
-                className="border-b border-border/50 hover:bg-accent/30"
+                className="border-b border-border/40 transition-colors last:border-0 hover:bg-accent/30"
               >
                 <td className="px-3 py-3 font-medium">
                   <GroupLabel dimension={primary}>{rowLabel(g.row)}</GroupLabel>
@@ -232,16 +239,16 @@ function Breakdown({
                     <GroupLabel dimension={secondary}>{colLabel(g.column)}</GroupLabel>
                   </td>
                 )}
-                <td className="px-3">{g.trades}</td>
-                <td className="px-3">{percent(g.winRate)}</td>
+                <td className="tnum px-3 text-muted-foreground">{g.trades}</td>
+                <td className="tnum px-3">{percent(g.winRate)}</td>
                 <td
                   className={`whitespace-nowrap px-3 tabular-nums ${g.netPnl >= 0 ? "text-profit" : "text-loss"}`}
                 >
                   <MonetaryValue>{money(g.netPnl, data.currencies[0] ?? "USD")}</MonetaryValue>
                 </td>
-                <td className="px-3">{number(g.volume)}</td>
-                <td className="px-3">{number(g.avgPlannedR)}</td>
-                <td className="px-3">{number(g.avgRealizedR)}</td>
+                <td className="tnum px-3 text-muted-foreground">{number(g.volume)}</td>
+                <td className="tnum px-3">{number(g.avgPlannedR)}</td>
+                <td className="tnum px-3">{number(g.avgRealizedR)}</td>
                 <td className="whitespace-nowrap px-3">{fmtDuration(g.avgDurationMs)}</td>
               </tr>
             ))}
@@ -263,10 +270,19 @@ export default function ReportsPage() {
     </Suspense>
   );
 }
+const MODE_HINTS = {
+  overview: "Your headline numbers, key takeaways and where your results come from.",
+  trends: "How your performance is changing over time.",
+  explorer: "Search and slice individual trades.",
+  habits: "Revenge trades, trading on after losses, sizing up and late-day fades, each against the rest of your trades.",
+  breakdown: "Group your trades by any dimension, such as symbol, tag or weekday.",
+  cross: "Combine two dimensions, such as symbol by weekday, to find hidden patterns.",
+  compare: "Put two sets of trades side by side, such as longs vs shorts or this month vs last.",
+} as const;
 function Reports() {
   const { query, values } = useFilters();
   const [mode, setMode] = useState<
-      "overview" | "trends" | "explorer" | "breakdown" | "cross" | "compare"
+      "overview" | "trends" | "explorer" | "habits" | "breakdown" | "cross" | "compare"
     >("overview"),
     [primary, setPrimary] = useState<Dimension>("symbol"),
     [secondary, setSecondary] = useState<Dimension>("weekday");
@@ -279,29 +295,22 @@ function Reports() {
   return (
     <div>
       <FilterBar title="Reports" />
-      <div className="space-y-4 p-4">
-        <AskJournal />
-        <div className="flex flex-wrap items-center gap-2">
-          {(
-            [
+      <div className="mx-auto w-full max-w-[1500px] space-y-5 p-4 sm:p-6">
+        <div className="space-y-2">
+          <TabBar
+            value={mode}
+            onChange={setMode}
+            options={[
               ["overview", "Overview"],
               ["trends", "Performance trends"],
               ["explorer", "Trade explorer"],
+              ["habits", "Habits"],
               ["breakdown", "Breakdowns"],
               ["cross", "Cross-analysis"],
               ["compare", "Compare groups"],
-            ] as const
-          ).map(([key, name]) => (
-            <Button
-              key={key}
-              size="sm"
-              variant={mode === key ? "default" : "outline"}
-              aria-pressed={mode === key}
-              onClick={() => setMode(key)}
-            >
-              {name}
-            </Button>
-          ))}
+            ]}
+          />
+          <p className="text-xs text-muted-foreground">{MODE_HINTS[mode]}</p>
         </div>
         <div key={mode} className="journal-report-section space-y-4" data-report-section={mode}>
           {mode === "overview" ? (
@@ -310,6 +319,8 @@ function Reports() {
             <PerformanceTrendsReport key={query} query={query} />
           ) : mode === "explorer" ? (
             <TradeExplorer key={query} query={query} />
+          ) : mode === "habits" ? (
+            <BehaviourPatterns key={query} query={query} />
           ) : mode === "compare" ? (
             <Comparison key={query} initial={values} />
           ) : (
@@ -397,6 +408,7 @@ function Reports() {
             </>
           )}
         </div>
+        <AskJournal />
       </div>
     </div>
   );
@@ -481,19 +493,17 @@ function Comparison({ initial }: { initial: AnalysisFilters }) {
       </div>
       {aa.data && bb.data && !aa.loading && !bb.loading && !multi && (
         <Card>
-          <CardContent className="space-y-4 pt-5">
-            <p className="text-sm">
-              {nameB} minus {nameA}:{" "}
-              <strong>
-                <MonetaryValue>
-                  {money(
-                    bb.data.summary.netPnl - aa.data.summary.netPnl,
-                    [...currencies][0] ?? "USD",
-                  )}
-                </MonetaryValue>
-              </strong>{" "}
-              net P&L · {number(bb.data.summary.trades - aa.data.summary.trades)} trades
-            </p>
+          <CardHeader>
+            <CardTitle>Head to head</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <CompareTable
+              nameA={nameA}
+              nameB={nameB}
+              a={aa.data}
+              b={bb.data}
+              currency={[...currencies][0] ?? "USD"}
+            />
             <ReviewExport
               containsFinancialData
               document={{
@@ -538,6 +548,97 @@ function Comparison({ initial }: { initial: AnalysisFilters }) {
           </div>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/** Side-by-side metrics. The better value in each contested row is highlighted. */
+function CompareTable({
+  nameA,
+  nameB,
+  a,
+  b,
+  currency,
+}: {
+  nameA: string;
+  nameB: string;
+  a: Analysis;
+  b: Analysis;
+  currency: string;
+}) {
+  type Row = {
+    label: string;
+    av: number | null;
+    bv: number | null;
+    show: (v: number | null) => ReactNode;
+    /** Whether a higher value is better. Omit when neither direction is better. */
+    higherIsBetter?: boolean;
+    delta?: (d: number) => ReactNode;
+  };
+  const sa = a.summary,
+    sb = b.summary;
+  const rows: Row[] = [
+    { label: "Closed trades", av: sa.trades, bv: sb.trades, show: (v) => (v === null ? "-" : String(v)) },
+    {
+      label: "Net P&L",
+      av: sa.netPnl,
+      bv: sb.netPnl,
+      higherIsBetter: true,
+      show: (v) => (v === null ? "-" : <MonetaryValue>{money(v, currency)}</MonetaryValue>),
+      delta: (d) => <MonetaryValue>{money(d, currency)}</MonetaryValue>,
+    },
+    { label: "Win rate", av: sa.winRate, bv: sb.winRate, higherIsBetter: true, show: percent, delta: (d) => `${(d * 100).toFixed(1)} pts` },
+    {
+      label: "Profit factor",
+      av: sa.noLosses ? Infinity : sa.profitFactor,
+      bv: sb.noLosses ? Infinity : sb.profitFactor,
+      higherIsBetter: true,
+      show: (v) => (v === Infinity ? "∞" : number(v)),
+    },
+    { label: "Avg planned R", av: sa.avgPlannedR, bv: sb.avgPlannedR, show: number },
+    { label: "Avg realized R", av: sa.avgRealizedR, bv: sb.avgRealizedR, higherIsBetter: true, show: number },
+    { label: "Entry volume", av: sa.volume, bv: sb.volume, show: number },
+    { label: "Avg holding time", av: sa.avgDurationMs, bv: sb.avgDurationMs, show: (v) => fmtDuration(v) },
+  ];
+  const cell = (win: boolean) =>
+    `px-3 py-2.5 text-right tabular-nums ${win ? "font-semibold text-foreground" : "text-muted-foreground"}`;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[28rem] text-sm">
+        <thead className="text-[11px] uppercase tracking-wide text-muted-foreground">
+          <tr className="border-b border-border/70">
+            <th className="px-3 py-2 text-left font-medium">Metric</th>
+            <th className="px-3 py-2 text-right font-medium">{nameA}</th>
+            <th className="px-3 py-2 text-right font-medium">{nameB}</th>
+            <th className="px-3 py-2 text-right font-medium">Difference</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const comparable =
+              row.higherIsBetter !== undefined && row.av !== null && row.bv !== null && row.av !== row.bv;
+            const aWins = comparable && (row.higherIsBetter ? row.av! > row.bv! : row.av! < row.bv!);
+            const bWins = comparable && !aWins;
+            const diff =
+              row.av !== null && row.bv !== null && Number.isFinite(row.av) && Number.isFinite(row.bv)
+                ? row.bv - row.av
+                : null;
+            return (
+              <tr key={row.label} className="border-b border-border/40 last:border-0">
+                <td className="px-3 py-2.5 font-medium">{row.label}</td>
+                <td className={cell(aWins)}>{row.show(row.av)}</td>
+                <td className={cell(bWins)}>{row.show(row.bv)}</td>
+                <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">
+                  {diff === null ? "-" : row.delta ? row.delta(diff) : number(diff)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Bold marks the stronger group. Difference is {nameB} minus {nameA}.
+      </p>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { dayKeyOf } from "@luxalgo/journal-core";
 import {
   db,
@@ -8,6 +8,7 @@ import {
   missedTrades,
   playbooks,
   accounts,
+  attachments,
 } from "@/db";
 import { handler, ok, bad, requireValue } from "@/server/api";
 import { newId, nowIso } from "@/server/ids";
@@ -154,18 +155,81 @@ export const POST = handler(async (request: Request, { params }: Context) => {
   return bad("Unknown resource", 404);
 });
 
+export const PATCH = handler(async (request: Request, { params }: Context) => {
+  const { resource } = await params;
+  const b = await request.json();
+  if (resource === "templates") {
+    requireValue(
+      text(b.id, 200) && text(b.name, 100) && b.name.trim() && text(b.content),
+      "A template needs a name and content (up to 100,000 characters).",
+    );
+    requireValue(
+      db.select().from(noteTemplates).where(eq(noteTemplates.id, b.id)).get(),
+      "Template not found.",
+    );
+    db.update(noteTemplates)
+      .set({ name: b.name.trim(), content: b.content })
+      .where(eq(noteTemplates.id, b.id))
+      .run();
+    return ok({ saved: true });
+  }
+  if (resource === "progress") {
+    requireValue(
+      text(b.id, 200) &&
+        text(b.title, 200) &&
+        b.title.trim() &&
+        ["Before trading", "During trading", "After trading"].includes(b.stage),
+      "Enter a routine title and stage.",
+    );
+    requireValue(
+      Array.isArray(b.weekdays) &&
+        b.weekdays.length > 0 &&
+        b.weekdays.every((n: unknown) => Number.isInteger(n) && Number(n) >= 0 && Number(n) <= 6),
+      "Select at least one weekday.",
+    );
+    requireValue(
+      db.select().from(progressRules).where(eq(progressRules.id, b.id)).get(),
+      "Routine not found.",
+    );
+    db.update(progressRules)
+      .set({
+        title: b.title.trim(),
+        stage: b.stage,
+        weekdaysJson: JSON.stringify([...new Set(b.weekdays)]),
+      })
+      .where(eq(progressRules.id, b.id))
+      .run();
+    return ok({ saved: true });
+  }
+  return bad("Unknown resource", 404);
+});
+
 export const DELETE = handler(async (request: Request, { params }: Context) => {
   const { resource } = await params;
   const b = await request.json();
   requireValue(text(b.id, 200), "Invalid id.");
   if (resource === "templates") db.delete(noteTemplates).where(eq(noteTemplates.id, b.id)).run();
-  else if (resource === "progress")
-    db.update(progressRules).set({ archivedAt: today() }).where(eq(progressRules.id, b.id)).run();
-  else if (resource === "missed")
-    db.update(missedTrades)
-      .set({ archivedAt: b.restore ? null : nowIso() })
-      .where(eq(missedTrades.id, b.id))
-      .run();
+  else if (resource === "progress") {
+    if (b.permanent === true)
+      db.transaction((tx) => {
+        tx.delete(progressChecks).where(eq(progressChecks.ruleId, b.id)).run();
+        tx.delete(progressRules).where(eq(progressRules.id, b.id)).run();
+      });
+    else db.update(progressRules).set({ archivedAt: today() }).where(eq(progressRules.id, b.id)).run();
+  } else if (resource === "missed") {
+    if (b.permanent === true)
+      db.transaction((tx) => {
+        tx.delete(attachments)
+          .where(and(eq(attachments.ownerType, "missed"), eq(attachments.ownerId, b.id)))
+          .run();
+        tx.delete(missedTrades).where(eq(missedTrades.id, b.id)).run();
+      });
+    else
+      db.update(missedTrades)
+        .set({ archivedAt: b.restore ? null : nowIso() })
+        .where(eq(missedTrades.id, b.id))
+        .run();
+  }
   else return bad("Unknown resource", 404);
   return ok({ saved: true });
 });

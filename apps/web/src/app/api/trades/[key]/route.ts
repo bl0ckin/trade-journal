@@ -2,7 +2,8 @@ import { tradeRisk, tradeR, plannedR } from "@luxalgo/journal-core";
 import { eq } from "drizzle-orm";
 import { db, trades, playbooks, accounts } from "@/db";
 import { bad, handler, ok, requireValue } from "@/server/api";
-import { deleteExecutionsForTrades, listExecutions } from "@/server/executions";
+import { deleteExecutionsForTrades, listExecutions, setTradesMarket } from "@/server/executions";
+import { isMarket } from "@/lib/markets";
 import { nowIso } from "@/server/ids";
 import { getTradeByKey, rowToTrade } from "@/server/trades-query";
 import { getTimeZone } from "@/server/settings";
@@ -44,6 +45,12 @@ interface AnnotateBody {
   stopLoss?: number | null;
   profitTarget?: number | null;
   reviewed?: boolean;
+  tradeQuality?: number | null;
+  confidence?: number | null;
+  emotionalState?: string | null;
+  emotionalStates?: string[] | null;
+  /** A market value, or null to clear it (falls back to a guess from the ticker). */
+  market?: string | null;
 }
 
 export const PATCH = handler(async (request: Request, { params }: Params) => {
@@ -62,6 +69,27 @@ export const PATCH = handler(async (request: Request, { params }: Params) => {
     body.rating == null || (Number.isInteger(body.rating) && body.rating >= 1 && body.rating <= 5),
     "Rating must be 1–5.",
   );
+  for (const field of ["tradeQuality", "confidence"] as const)
+    requireValue(
+      body[field] == null ||
+        (typeof body[field] === "number" &&
+          Number.isInteger(body[field]) &&
+          body[field]! >= 1 &&
+          body[field]! <= 10),
+      `${field === "tradeQuality" ? "Trade quality" : "Confidence"} must be 1–10.`,
+    );
+  requireValue(
+    body.emotionalStates == null ||
+      (Array.isArray(body.emotionalStates) &&
+        body.emotionalStates.length <= 20 &&
+        body.emotionalStates.every((item) => typeof item === "string" && item.length <= 40)),
+    "Invalid emotional states.",
+  );
+  requireValue(
+    body.emotionalState == null ||
+      (typeof body.emotionalState === "string" && body.emotionalState.length <= 40),
+    "Invalid emotional state.",
+  );
   requireValue(
     body.notes == null || (typeof body.notes === "string" && body.notes.length <= 100000),
     "Notes must be at most 100,000 characters.",
@@ -78,6 +106,10 @@ export const PATCH = handler(async (request: Request, { params }: Params) => {
     !body.playbookId || db.select().from(playbooks).where(eq(playbooks.id, body.playbookId)).get(),
     "Playbook not found.",
   );
+  requireValue(
+    body.market == null || isMarket(body.market),
+    "Choose a valid market.",
+  );
   const patch: Partial<typeof trades.$inferInsert> = {};
   if (body.notes !== undefined) patch.notes = body.notes;
   if (body.tags !== undefined) patch.tagsJson = JSON.stringify(body.tags);
@@ -86,10 +118,15 @@ export const PATCH = handler(async (request: Request, { params }: Params) => {
   if (body.rating !== undefined) patch.rating = body.rating;
   if (body.stopLoss !== undefined) patch.stopLoss = body.stopLoss;
   if (body.profitTarget !== undefined) patch.profitTarget = body.profitTarget;
+  if (body.tradeQuality !== undefined) patch.tradeQuality = body.tradeQuality;
+  if (body.confidence !== undefined) patch.confidence = body.confidence;
+  if (body.emotionalState !== undefined) patch.emotionalState = body.emotionalState;
+  if (body.emotionalStates !== undefined)
+    patch.emotionalState = body.emotionalStates?.length ? JSON.stringify(body.emotionalStates) : null;
   if (body.reviewed !== undefined) patch.reviewedAt = body.reviewed ? nowIso() : null;
 
-  if (!Object.keys(patch).length) return ok({ updated: true });
-  db.update(trades).set(patch).where(eq(trades.key, decoded)).run();
+  if (Object.keys(patch).length) db.update(trades).set(patch).where(eq(trades.key, decoded)).run();
+  if (body.market !== undefined) setTradesMarket([row], body.market);
   return ok({ updated: true });
 });
 

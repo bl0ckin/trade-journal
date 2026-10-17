@@ -1,5 +1,4 @@
 import {
-  readFilters,
   byDirection,
   byDuration,
   byHour,
@@ -17,18 +16,20 @@ import {
 import { asc } from "drizzle-orm";
 import { accounts, db, playbooks } from "@/db";
 import { calendarRunningPnl } from "@/lib/calendar-insights";
+import { computeExtendedStats, computePsychology } from "@/lib/extended-stats";
+import { byMarket } from "@/lib/markets";
 import { handler, ok } from "@/server/api";
 import { getTimeZone, getCurrencyConversion } from "@/server/settings";
 import { currencyProjection } from "@/server/currency-conversion";
-import { queryTrades, type TradeFilters } from "@/server/trades-query";
+import { queryTrades, type TradeFilters, readTradeFilters } from "@/server/trades-query";
 
 /** The entire dashboard in one request. */
 export const GET = handler(async (request: Request) => {
   const url = new URL(request.url);
   const timeZone = getTimeZone();
-  const filters: TradeFilters = readFilters(url.searchParams);
+  const filters: TradeFilters = readTradeFilters(url.searchParams);
 
-  const { trades: originalTrades } = queryTrades(filters);
+  const { rows: originalRows, trades: originalTrades } = queryTrades(filters);
   const accountRows = db.select().from(accounts).orderBy(asc(accounts.createdAt)).all();
   const selected = filters.accounts
     ? accountRows.filter((a) =>
@@ -85,6 +86,11 @@ export const GET = handler(async (request: Request) => {
     playbooks: db.select({ id: playbooks.id, name: playbooks.name }).from(playbooks).all(),
     metrics: currencyScope.monetary ? metrics : null,
     edgeScore: currencyScope.monetary ? computeEdgeScore(metrics) : null,
+    extended: currencyScope.monetary ? computeExtendedStats(trades) : null,
+    psychology: currencyScope.monetary
+      ? computePsychology(trades, new Map(originalRows.map((row) => [row.key, row])))
+      : null,
+    markets: currencyScope.monetary ? byMarket(trades) : [],
     days,
     dailyCumulative: dailyCumulativeFromDays(days),
     equity,

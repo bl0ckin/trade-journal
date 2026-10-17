@@ -1,14 +1,35 @@
-import { readFilters } from "@luxalgo/journal-core";
 import { computeMetrics } from "@luxalgo/journal-core";
 import { handler, ok } from "@/server/api";
 import { getTimeZone } from "@/server/settings";
-import { queryTrades, type TradeFilters } from "@/server/trades-query";
+import { queryTrades, type TradeFilters, readTradeFilters } from "@/server/trades-query";
+import { matchesTradeSearch } from "@/lib/trade-search";
 
-const filtersFrom = (url: URL): TradeFilters => readFilters(url.searchParams);
+const filtersFrom = (url: URL): TradeFilters => readTradeFilters(url.searchParams);
 
 export const GET = handler(async (request: Request) => {
   const url = new URL(request.url);
-  const { rows, trades } = queryTrades(filtersFrom(url));
+  const found = queryTrades(filtersFrom(url));
+  let { rows, trades } = found;
+  // Free-text search (symbol, tags, mistakes, emotions, notes). Applied before the metrics so the
+  // summary cards describe exactly the trades that are listed.
+  const search = url.searchParams.get("q")?.trim();
+  if (search) {
+    const keep = rows.map((row, index) =>
+      matchesTradeSearch(
+        {
+          symbol: row.symbol,
+          direction: row.direction,
+          notes: row.notes,
+          emotionalState: row.emotionalState,
+          tags: trades[index]!.annotations?.tags ?? [],
+          mistakes: trades[index]!.annotations?.mistakes ?? [],
+        },
+        search,
+      ),
+    );
+    rows = rows.filter((_, index) => keep[index]);
+    trades = trades.filter((_, index) => keep[index]);
+  }
   const timeZone = getTimeZone();
   const metrics = computeMetrics(trades, { timeZone });
   const listView = url.searchParams.get("view") === "list";

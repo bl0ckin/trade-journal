@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   createSortedRowModel,
   rowSelectionFeature,
@@ -13,8 +13,11 @@ import {
   sortFns,
   type ColumnDef,
 } from "@tanstack/react-table";
-import { ArrowUpDown, Check, Columns3, Download, Tag, Trash2 } from "lucide-react";
+import { ArrowUpDown, Check, Columns3, Download, Search, Tag, Trash2 } from "lucide-react";
 import { dayKeyOf, netReturnOnEntry, type TradeMetrics } from "@luxalgo/journal-core";
+import { AddTradeDialog } from "@/components/add-trade-dialog";
+import { CloseTradeDialog } from "@/components/close-trade-dialog";
+import { DailyLimitWarning } from "@/components/daily-limit-warning";
 import { FilterBar, useFilters } from "@/components/filter-bar";
 import { Pnl } from "@/components/pnl";
 import { MonetaryValue } from "@/components/privacy";
@@ -24,21 +27,26 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SyncButton } from "@/components/sync-button";
 import Loading from "@/app/loading";
+import { useOnSynced } from "@/lib/sync-events";
+import { loadTradesView, saveTradesView } from "@/lib/trades-view";
 import { postJson, useApi } from "@/lib/use-api";
+import { MARKETS, marketLabel, resolveMarket } from "@/lib/markets";
+import { parseEmotions } from "@/lib/emotions";
 import { cn, fmtDuration, fmtMoney, fmtNumber, fmtPercent } from "@/lib/utils";
 
 interface TradeRow {
   key: string;
   accountId: string;
   symbol: string;
-  assetClass: string | null;
   contractMultiplier: number | null;
   direction: "long" | "short";
   status: string;
   openedAt: string;
   closedAt: string | null;
   quantity: number;
+  openQuantity: number;
   avgEntry: number;
   avgExit: number | null;
   grossPnl: number;
@@ -47,6 +55,10 @@ interface TradeRow {
   executionCount: number;
   durationMs: number | null;
   rating: number | null;
+  assetClass: string | null;
+  emotionalState: string | null;
+  tradeQuality: number | null;
+  confidence: number | null;
   tags: string[];
   mistakes: string[];
   reviewed: boolean;
@@ -71,19 +83,40 @@ export default function TradesPage() {
 }
 
 function Trades() {
-  const { query } = useFilters();
+  const { query, accounts } = useFilters();
+  // Typing updates `search` at once; the server is only asked once typing pauses.
+  const [search, setSearch] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [onlyUnreviewed, setOnlyUnreviewed] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchQuery(search.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [search]);
   const { data, error, refresh } = useApi<{
     trades: TradeRow[];
     metrics: TradeMetrics;
     timeZone: string;
-  }>(`/api/trades?view=list&${query}`);
+  }>(
+    `/api/trades?view=list&${query}${searchQuery ? `${query ? "&" : ""}q=${encodeURIComponent(searchQuery)}` : ""}`,
+  );
+  useOnSynced(refresh);
   const router = useRouter();
+  const [activeKey, setActiveKey] = useState<string | null>(null);
   const timeZone = data?.timeZone ?? "UTC";
   const [tagInput, setTagInput] = useState("");
   const [showColumns, setShowColumns] = useState(false);
   const [page, setPage] = useState(0);
   const pageSize = 50;
-  useEffect(() => setPage(0), [query]);
+  useEffect(() => setPage(0), [query, searchQuery, onlyUnreviewed]);
+
+  // Closed trades still waiting for a review; the toggle narrows the list to them.
+  const needsReview = useMemo(
+    () => (data?.trades ?? EMPTY_TRADES).filter((trade) => trade.status !== "open" && !trade.reviewed),
+    [data],
+  );
+  const listedTrades = onlyUnreviewed ? needsReview : (data?.trades ?? EMPTY_TRADES);
+  // Sort order and visible columns are remembered between visits (read once, on the client).
+  const savedView = useMemo(() => loadTradesView(), []);
 
   const columns = useMemo<ColumnDef<typeof features, TradeRow>[]>(
     () => [
@@ -114,13 +147,20 @@ function Trades() {
       },
       {
         id: "closedAt",
-        accessorKey: "closedAt",
+        // Open trades have no close date, so they sort by when they were opened. Otherwise
+        // they would always sink to the bottom, even when opened after other trades closed.
+        accessorFn: (row) => row.closedAt ?? row.openedAt,
         header: "Close date",
-        cell: ({ getValue }) => (
-          <span className="text-muted-foreground">
-            {getValue<string | null>() ? dayKeyOf(getValue<string>(), timeZone) : "open"}
-          </span>
-        ),
+        cell: ({ row }) =>
+          row.original.closedAt ? (
+            <span className="text-muted-foreground">
+              {dayKeyOf(row.original.closedAt, timeZone)}
+            </span>
+          ) : row.original.openQuantity > 0 ? (
+            <CloseTradeDialog trade={row.original} timeZone={timeZone} onClosed={refresh} />
+          ) : (
+            <span className="text-muted-foreground">open</span>
+          ),
       },
       {
         id: "symbol",
@@ -129,9 +169,19 @@ function Trades() {
         cell: ({ row, getValue }) => (
           <span className="flex items-center gap-2 font-medium">
             {getValue<string>()}
-            <span className="text-xs text-muted-foreground">{row.original.direction}</span>
+            <span
+              className={`text-xs font-medium ${row.original.direction === "long" ? "text-profit" : "text-loss"}`}
+            >
+              {row.original.direction}
+            </span>
           </span>
         ),
+      },
+      {
+        id: "market",
+        accessorFn: (row) => marketLabel(resolveMarket(row.assetClass, row.symbol)),
+        header: "Market",
+        cell: ({ getValue }) => <span className="text-muted-foreground">{getValue<string>()}</span>,
       },
       {
         id: "status",
@@ -140,7 +190,17 @@ function Trades() {
         cell: ({ getValue }) => {
           const status = getValue<string>();
           return (
-            <Badge variant={status === "win" ? "profit" : status === "loss" ? "loss" : "secondary"}>
+            <Badge
+              variant={
+                status === "win"
+                  ? "profit"
+                  : status === "loss"
+                    ? "loss"
+                    : status === "open"
+                      ? "open"
+                      : "secondary"
+              }
+            >
               {status.toUpperCase()}
             </Badge>
           );
@@ -246,6 +306,34 @@ function Trades() {
         },
       },
       {
+        id: "emotionalState",
+        accessorFn: (row) => parseEmotions(row.emotionalState).join(", "),
+        header: "Emotion",
+        cell: ({ getValue }) => (
+          <span className="text-muted-foreground">{getValue<string>() || "–"}</span>
+        ),
+      },
+      {
+        id: "tradeQuality",
+        accessorKey: "tradeQuality",
+        header: "Quality",
+        cell: ({ getValue }) => (
+          <span className="tnum text-muted-foreground">
+            {getValue<number | null>() ?? "–"}
+          </span>
+        ),
+      },
+      {
+        id: "confidence",
+        accessorKey: "confidence",
+        header: "Confidence",
+        cell: ({ getValue }) => (
+          <span className="tnum text-muted-foreground">
+            {getValue<number | null>() ?? "–"}
+          </span>
+        ),
+      },
+      {
         id: "reviewed",
         accessorKey: "reviewed",
         header: "Reviewed",
@@ -257,17 +345,25 @@ function Trades() {
           ),
       },
     ],
-    [timeZone],
+    [timeZone, refresh],
   );
 
   const table = useTable({
     features,
     columns,
-    data: data?.trades ?? EMPTY_TRADES,
+    data: listedTrades,
     getRowId: (row) => row.key,
     initialState: {
-      sorting: [{ id: "closedAt", desc: true }],
-      columnVisibility: { fees: false, executionCount: false, rating: false },
+      sorting: savedView?.sorting.length ? savedView.sorting : [{ id: "closedAt", desc: true }],
+      columnVisibility: {
+        fees: false,
+        executionCount: false,
+        rating: false,
+        emotionalState: false,
+        tradeQuality: false,
+        confidence: false,
+        ...savedView?.columnVisibility,
+      },
     },
   });
 
@@ -276,6 +372,64 @@ function Trades() {
   const pageCount = Math.max(1, Math.ceil(sortedRows.length / pageSize));
   const currentPage = Math.min(page, pageCount - 1);
   const visibleRows = sortedRows.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
+  const leafColumns = table.getAllLeafColumns();
+  const viewSignature = JSON.stringify({
+    sorting: leafColumns
+      .filter((column) => column.getIsSorted())
+      .map((column) => ({ id: column.id, desc: column.getIsSorted() === "desc" })),
+    columnVisibility: Object.fromEntries(leafColumns.map((column) => [column.id, column.getIsVisible()])),
+  });
+  useEffect(() => saveTradesView(viewSignature), [viewSignature]);
+
+  const { data: playbookData } = useApi<{ playbooks: { id: string; name: string }[] }>(
+    selectedKeys.length > 0 ? "/api/playbooks" : null,
+  );
+  const [mistakeInput, setMistakeInput] = useState("");
+
+  // Keyboard: j/k move, Enter opens, x selects, / searches. Latest values go through a ref so the
+  // listener is attached once.
+  const keyboard = useRef({ rows: visibleRows, activeKey, query });
+  keyboard.current = { rows: visibleRows, activeKey, query };
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable='true']")) {
+        if (event.key === "Escape" && target.getAttribute("aria-label") === "Search trades")
+          target.blur();
+        return;
+      }
+      if (document.querySelector('[role="dialog"]')) return;
+      const { rows, activeKey: current, query: currentQuery } = keyboard.current;
+      const index = rows.findIndex((row) => row.id === current);
+      const onControl = Boolean(target?.closest("button, a, [role='checkbox'], [role='combobox']"));
+      if (event.key === "/") {
+        event.preventDefault();
+        document.querySelector<HTMLInputElement>('input[aria-label="Search trades"]')?.focus();
+      } else if (event.key === "j" || event.key === "k") {
+        if (rows.length === 0) return;
+        event.preventDefault();
+        const next = event.key === "j" ? Math.min(rows.length - 1, index + 1) : Math.max(0, index < 0 ? 0 : index - 1);
+        const id = rows[next]!.id;
+        setActiveKey(id);
+        document
+          .querySelector(`[data-row-key="${CSS.escape(id)}"]`)
+          ?.scrollIntoView({ block: "nearest" });
+      } else if (event.key === "Enter" && index >= 0 && !onControl) {
+        event.preventDefault();
+        router.push(`/trades/${encodeURIComponent(rows[index]!.id)}?${currentQuery}`);
+      } else if (event.key === "x" && index >= 0 && !onControl) {
+        event.preventDefault();
+        const row = rows[index]!;
+        row.toggleSelected(!row.getIsSelected());
+      } else if (event.key === "Escape") {
+        setActiveKey(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [router]);
+
   const bulk = async (action: string, extra?: Record<string, unknown>) => {
     await postJson("/api/trades/bulk", { keys: selectedKeys, action, ...extra });
     table.resetRowSelection();
@@ -287,6 +441,7 @@ function Trades() {
     <div>
       <FilterBar
         title="Trades"
+        beforeFilters={<SyncButton onSynced={refresh} />}
         actions={
           <div className="flex items-center gap-2">
             <a href={`/api/export?format=csv&${query}`} download>
@@ -299,12 +454,17 @@ function Trades() {
               <Columns3 />
               Columns
             </Button>
+            <AddTradeDialog onSaved={refresh} />
           </div>
         }
       />
       <div className="space-y-3 p-4">
+        <DailyLimitWarning
+          accounts={accounts}
+          refreshKey={`${data?.trades.length ?? 0}-${data?.metrics?.closedTrades ?? 0}`}
+        />
         {m && (
-          <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 xl:grid-cols-5">
             <Card>
               <CardHeader>
                 <CardTitle>Net cumulative P&L</CardTitle>
@@ -346,8 +506,45 @@ function Trades() {
                 </span>
               </CardContent>
             </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Expectancy / trade</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {m.closedTrades > 0 ? (
+                  <Pnl value={m.netPnl / m.closedTrades} className="text-xl font-semibold" />
+                ) : (
+                  <span className="text-xl font-semibold tnum">–</span>
+                )}
+              </CardContent>
+            </Card>
           </div>
         )}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-48 max-w-sm flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search symbol, tag, mistake, notes…"
+              aria-label="Search trades"
+              className="h-8 pl-8 text-xs"
+            />
+          </div>
+          <Button
+            variant={onlyUnreviewed ? "secondary" : "outline"}
+            size="sm"
+            aria-pressed={onlyUnreviewed}
+            onClick={() => setOnlyUnreviewed((value) => !value)}
+          >
+            <Check />
+            Needs review · {needsReview.length}
+          </Button>
+          <span className="hidden text-xs text-muted-foreground lg:inline">
+            j/k move · Enter open · x select · / search
+          </span>
+        </div>
 
         {showColumns && (
           <Card>
@@ -400,7 +597,82 @@ function Trades() {
                   <Tag />
                   Tag
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!tagInput}
+                  onClick={() => {
+                    void bulk("untag", { tag: tagInput });
+                    setTagInput("");
+                  }}
+                >
+                  Untag
+                </Button>
               </div>
+              <div className="flex max-w-full flex-wrap items-center gap-1">
+                <Input
+                  value={mistakeInput}
+                  onChange={(event) => setMistakeInput(event.target.value)}
+                  placeholder="mistake"
+                  className="h-8 w-28 text-xs"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!mistakeInput}
+                  onClick={() => {
+                    void bulk("mistake", { mistake: mistakeInput });
+                    setMistakeInput("");
+                  }}
+                >
+                  Mistake
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!mistakeInput}
+                  onClick={() => {
+                    void bulk("unmistake", { mistake: mistakeInput });
+                    setMistakeInput("");
+                  }}
+                >
+                  Remove
+                </Button>
+              </div>
+              <select
+                aria-label="Set playbook for selected trades"
+                className="h-8 rounded-md border bg-background px-2 text-xs"
+                value=""
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (value) void bulk("playbook", { playbookId: value === "none" ? null : value });
+                }}
+              >
+                <option value="">Set playbook…</option>
+                <option value="none">No playbook</option>
+                {playbookData?.playbooks.map((playbook) => (
+                  <option key={playbook.id} value={playbook.id}>
+                    {playbook.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label="Set market for selected trades"
+                className="h-8 rounded-md border bg-background px-2 text-xs"
+                value=""
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (value) void bulk("market", { market: value === "none" ? null : value });
+                }}
+              >
+                <option value="">Set market…</option>
+                <option value="none">Not set</option>
+                {MARKETS.map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
               <Button
                 variant="destructive"
                 size="sm"
@@ -469,7 +741,11 @@ function Trades() {
                   {visibleRows.map((row) => (
                     <tr
                       key={row.id}
-                      className="cursor-pointer border-b transition-colors last:border-0 hover:bg-muted/50"
+                      data-row-key={row.id}
+                      className={cn(
+                        "cursor-pointer border-b transition-colors last:border-0 hover:bg-muted/50",
+                        activeKey === row.id && "bg-muted/60 ring-1 ring-inset ring-ring/50",
+                      )}
                       onClick={() =>
                         router.push(`/trades/${encodeURIComponent(row.original.key)}?${query}`)
                       }
@@ -487,11 +763,17 @@ function Trades() {
                         colSpan={columns.length}
                         className="py-16 text-center text-muted-foreground"
                       >
-                        No trades match these filters.{" "}
-                        <Link href="/import" className="underline">
-                          Import some
-                        </Link>
-                        .
+                        {searchQuery || onlyUnreviewed ? (
+                          "Nothing matches this search."
+                        ) : (
+                          <>
+                            No trades match these filters.{" "}
+                            <Link href="/import" className="underline">
+                              Import some
+                            </Link>
+                            .
+                          </>
+                        )}
                       </td>
                     </tr>
                   )}

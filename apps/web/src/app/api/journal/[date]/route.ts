@@ -1,11 +1,10 @@
-import { readFilters } from "@luxalgo/journal-core";
 import { eq } from "drizzle-orm";
 import { computeMetrics, dayKeyOf, intradayCurve } from "@luxalgo/journal-core";
 import { db, executions, journalDays } from "@/db";
 import { bad, handler, ok } from "@/server/api";
 import { nowIso } from "@/server/ids";
 import { getTimeZone } from "@/server/settings";
-import { queryTrades } from "@/server/trades-query";
+import { queryTrades, readTradeFilters } from "@/server/trades-query";
 
 type Params = { params: Promise<{ date: string }> };
 
@@ -15,7 +14,7 @@ export const GET = handler(async (request: Request, { params }: Params) => {
   const url = new URL(request.url);
   const timeZone = getTimeZone();
 
-  const { rows, trades } = queryTrades(readFilters(url.searchParams));
+  const { rows, trades } = queryTrades(readTradeFilters(url.searchParams));
   const dayTradeIndexes = trades
     .map((trade, index) => ({ trade, index }))
     .filter(({ trade }) => trade.closedAt && dayKeyOf(trade.closedAt, timeZone) === date);

@@ -33,6 +33,10 @@ import {
 } from "lucide-react";
 import { FilterBar, useFilters } from "@/components/filter-bar";
 import { AddTradeDialog } from "@/components/add-trade-dialog";
+import { SyncButton } from "@/components/sync-button";
+import { DailyLimitWarning } from "@/components/daily-limit-warning";
+import { AccountBalances } from "@/components/account-balances";
+import { CloseTradeDialog } from "@/components/close-trade-dialog";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { MonetaryValue } from "@/components/privacy";
 import { Pnl } from "@/components/pnl";
@@ -93,12 +97,21 @@ export default function DashboardPage() {
 }
 
 function Dashboard() {
-  const { query } = useFilters();
+  const { query, accounts } = useFilters();
   const { data, loading, error, refresh } = useApi<StatsPayload>(`/api/stats?${query}`);
 
   return (
     <>
-      <FilterBar title="Dashboard" actions={<AddTradeDialog onSaved={refresh} />} />
+      <FilterBar
+        title="Dashboard"
+        beforeFilters={<SyncButton onSynced={refresh} />}
+        actions={<AddTradeDialog onSaved={refresh} />}
+      />
+      <DailyLimitWarning
+        accounts={accounts}
+        refreshKey={`${data?.metrics?.closedTrades ?? 0}-${data?.openPositions.length ?? 0}`}
+        className="px-4 pt-4"
+      />
       <DashboardContent
         data={data}
         loading={loading}
@@ -224,6 +237,7 @@ function DashboardContent({
     <>
       <CurrencyNotice scope={data.currencyScope} />
       <DashboardLayout
+        balance={<AccountBalances />}
         widgets={[
           {
             id: "widget-0",
@@ -549,7 +563,7 @@ function DashboardContent({
                                   ? "profit"
                                   : trade.status === "loss"
                                     ? "loss"
-                                    : "secondary"
+                                    : trade.status === "open" ? "open" : "secondary"
                               }
                             >
                               {trade.status.toUpperCase()}
@@ -578,11 +592,23 @@ function DashboardContent({
                             <Badge variant="secondary">{position.direction.toUpperCase()}</Badge>
                             {position.symbol}
                           </span>
-                          <span className="tnum text-xs text-muted-foreground">
-                            {fmtNumber(position.quantity, 4)} @{" "}
-                            <MonetaryValue>
-                              {fmtNumber(position.avgEntry)} {position.currency}
-                            </MonetaryValue>
+                          <span className="flex items-center gap-2">
+                            <span className="tnum text-xs text-muted-foreground">
+                              {fmtNumber(position.quantity, 4)} @{" "}
+                              <MonetaryValue>
+                                {fmtNumber(position.avgEntry)} {position.currency}
+                              </MonetaryValue>
+                            </span>
+                            <CloseTradeDialog
+                              trade={{
+                                key: position.key,
+                                symbol: position.symbol,
+                                direction: position.direction === "short" ? "short" : "long",
+                                openQuantity: position.quantity,
+                              }}
+                              timeZone={data.timeZone}
+                              onClosed={refresh}
+                            />
                           </span>
                         </div>
                       ))}

@@ -1,9 +1,9 @@
-import { calendarMonthFromDays, dailyStats, dayKeyOf, readFilters } from "@luxalgo/journal-core";
+import { calendarMonthFromDays, dailyStats, dayKeyOf } from "@luxalgo/journal-core";
 import { accounts, db } from "@/db";
 import { handler, ok, requireValue } from "@/server/api";
 import { getTimeZone, getCurrencyConversion } from "@/server/settings";
 import { currencyProjection } from "@/server/currency-conversion";
-import { queryTrades } from "@/server/trades-query";
+import { queryTrades, readTradeFilters } from "@/server/trades-query";
 import { calendarInsights, calendarRunningPnl, calendarScope } from "@/lib/calendar-insights";
 
 /** Only compute the visible month, not every dashboard/report breakdown. */
@@ -22,7 +22,7 @@ export const GET = handler(async (request: Request) => {
       month <= 12,
     "Choose a valid calendar month.",
   );
-  const scope = calendarScope(readFilters(params), year, month);
+  const scope = calendarScope(readTradeFilters(params), year, month);
   const { trades: originalTrades } = queryTrades(scope);
   const selectedIds = scope.accounts?.split(",").map((id) => id.trim());
   const accountRows = db

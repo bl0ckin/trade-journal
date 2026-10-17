@@ -1,12 +1,13 @@
 "use client";
 
 import { Suspense, useState } from "react";
-import { Archive, ArchiveRestore, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Plus, RefreshCw, Star, Trash2 } from "lucide-react";
 import { AccountCreateForm } from "@/components/account-create-form";
 import { FilterBar } from "@/components/filter-bar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -23,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { postJson, useApi } from "@/lib/use-api";
+import { formatTimestamp, isTimeZone } from "@/lib/timezone";
 import { fmtMoney } from "@/lib/utils";
 import { MonetaryValue, MonetaryField } from "@/components/privacy";
 
@@ -50,7 +52,12 @@ export default function AccountsPage() {
 }
 
 function Accounts() {
-  const { data, refresh } = useApi<{ accounts: AccountRow[] }>("/api/accounts");
+  const { data, refresh } = useApi<{ accounts: AccountRow[]; primaryAccountId?: string | null }>(
+    "/api/accounts",
+  );
+  const { data: settings } = useApi<{ timeZone: string }>("/api/settings");
+  const savedZone = settings?.timeZone;
+  const timeZone = isTimeZone(savedZone) ? savedZone : "UTC";
   const [syncing, setSyncing] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
@@ -119,6 +126,9 @@ function Accounts() {
                 <Badge variant="secondary" className="mt-1.5 mr-2">
                   {account.kind}
                 </Badge>
+                {data.primaryAccountId === account.id && (
+                  <Badge className="mt-1.5 mr-2">Primary</Badge>
+                )}
                 {account.broker && (
                   <span className="text-xs font-normal text-muted-foreground">
                     {account.broker}
@@ -136,6 +146,35 @@ function Accounts() {
                     title="Sync now"
                   >
                     <RefreshCw className={syncing === account.id ? "animate-spin" : undefined} />
+                  </Button>
+                )}
+                {account.kind !== "sync" && !account.archivedAt && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    aria-pressed={data.primaryAccountId === account.id}
+                    title={
+                      data.primaryAccountId === account.id
+                        ? "Primary account (click to unset)"
+                        : "Make primary account"
+                    }
+                    onClick={async () => {
+                      await postJson(
+                        `/api/accounts/${account.id}`,
+                        { primary: data.primaryAccountId !== account.id },
+                        "PATCH",
+                      );
+                      refresh();
+                    }}
+                  >
+                    <Star
+                      className={
+                        data.primaryAccountId === account.id
+                          ? "fill-current text-yellow-500"
+                          : undefined
+                      }
+                    />
                   </Button>
                 )}
                 <Button
@@ -178,9 +217,30 @@ function Accounts() {
                   </span>
                   <span className="ml-2 text-xs text-muted-foreground">
                     {account.snapshot.positions.length} open positions · synced{" "}
-                    {account.lastSyncAt?.slice(0, 16).replace("T", " ")}
+                    <span title={timeZone}>
+                      {account.lastSyncAt
+                        ? formatTimestamp(account.lastSyncAt, timeZone).slice(0, 16)
+                        : "never"}
+                    </span>
                   </span>
                 </div>
+              )}
+              {account.kind === "sync" && (
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Checkbox
+                    checked={account.autoSync}
+                    onCheckedChange={async (value) => {
+                      await postJson(
+                        `/api/accounts/${account.id}`,
+                        { autoSync: value === true },
+                        "PATCH",
+                      );
+                      refresh();
+                    }}
+                    aria-label="Sync this account automatically in the background"
+                  />
+                  Sync automatically in the background
+                </label>
               )}
               <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2">
                 <div className="min-w-0">

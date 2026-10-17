@@ -1,5 +1,6 @@
 import type { ImportedExecution } from "@luxalgo/journal-importers";
 import { bad, handler, ok, requireValue } from "@/server/api";
+import { isMarket } from "@/lib/markets";
 import { insertExecutions } from "@/server/executions";
 
 interface ManualBody {
@@ -29,7 +30,8 @@ export const POST = handler(async (request: Request) => {
       !Number.isFinite(row.quantity) ||
       !(row.quantity > 0) ||
       !Number.isFinite(row.price) ||
-      !Number.isFinite(row.fee ?? 0)
+      !Number.isFinite(row.fee ?? 0) ||
+      (row.assetClass != null && !isMarket(row.assetClass))
     ) {
       return bad("every execution needs symbol, side, quantity > 0, price, executedAt");
     }

@@ -10,39 +10,41 @@
  */
 :root {
   color-scheme: light;
-  --background: #f9f9f7;
-  --foreground: #0b0b0b;
-  --card: #fcfcfb;
-  --card-foreground: #0b0b0b;
-  --popover: #fcfcfb;
-  --popover-foreground: #0b0b0b;
-  --primary: #16161a;
-  --primary-foreground: #fafafa;
-  --secondary: #f0efec;
-  --secondary-foreground: #16161a;
-  --muted: #f0efec;
-  --muted-foreground: #52514e;
-  --accent: #f0efec;
-  --accent-foreground: #16161a;
+  --background: #f3f5fc;
+  --foreground: #0a0f1f;
+  --card: #ffffff;
+  --card-foreground: #0a0f1f;
+  --popover: #ffffff;
+  --popover-foreground: #0a0f1f;
+  --primary: #1f6feb;
+  --primary-foreground: #ffffff;
+  --secondary: #e9eefb;
+  --secondary-foreground: #0a0f1f;
+  --muted: #edf0fa;
+  --muted-foreground: #525d80;
+  --accent: #e6ecfb;
+  --accent-foreground: #0a0f1f;
   --destructive: #d03b3b;
   --destructive-foreground: #fafafa;
-  --border: #e1e0d9;
-  --input: #e1e0d9;
-  --ring: #0b7cbd;
+  --border: #dbe2f4;
+  --input: #d0d9ef;
+  --ring: #1f6feb;
   --radius: 0.5rem;
 
   /* Brand accent (LuxAlgo blue): never the sole carrier of information. */
-  --brand: #0b7cbd;
+  --brand: #1f6feb;
+  --brand-glow: 31 111 235;
+  --violet-glow: 124 92 246;
 
   /* viz tokens (validated: see docs/design.md) */
-  --viz-surface: #fcfcfb;
-  --ink-muted: #686760;
-  --gridline: #e1e0d9;
-  --baseline: #c3c2b7;
-  --profit: #006300;
-  --profit-fill: #0ca30c;
-  --loss: #d03b3b;
-  --neutral-mid: #f0efec;
+  --viz-surface: #ffffff;
+  --ink-muted: #5a6486;
+  --gridline: #e2e8f6;
+  --baseline: #c0c9e2;
+  --profit: #1f7a4f;
+  --profit-fill: #2fa36b;
+  --loss: #c0434a;
+  --neutral-mid: #e8ecf8;
   --series-1: #2a78d6;
   --series-2: #eb6834;
   --series-3: #1baf7a;
@@ -55,36 +57,39 @@
 
 .dark {
   color-scheme: dark;
-  --background: #08080a;
-  --foreground: #f4f4f4;
-  --card: #101013;
-  --card-foreground: #f4f4f4;
-  --popover: #131317;
-  --popover-foreground: #f4f4f4;
-  --primary: #ececec;
-  --primary-foreground: #131316;
-  --secondary: #1b1b20;
-  --secondary-foreground: #f4f4f4;
-  --muted: #17171b;
-  --muted-foreground: #9c9ca6;
-  --accent: #1b1b20;
-  --accent-foreground: #f4f4f4;
-  --destructive: #d03b3b;
+  /* Deep midnight-indigo surfaces instead of flat grey-black; a bright azure accent. */
+  --background: #04060f;
+  --foreground: #eef1fa;
+  --card: #080b18;
+  --card-foreground: #eef1fa;
+  --popover: #0c1020;
+  --popover-foreground: #eef1fa;
+  --primary: #3187e0;
+  --primary-foreground: #03101f;
+  --secondary: #0f1427;
+  --secondary-foreground: #eef1fa;
+  --muted: #0b1022;
+  --muted-foreground: #9ba3c0;
+  --accent: #121830;
+  --accent-foreground: #eef1fa;
+  --destructive: #d94a4a;
   --destructive-foreground: #fafafa;
-  --border: #222228;
-  --input: #26262c;
-  --ring: #1197e2;
+  --border: #161d38;
+  --input: #1d2542;
+  --ring: #3187e0;
 
-  --brand: #1197e2;
+  --brand: #3187e0;
+  --brand-glow: 49 135 224;
+  --violet-glow: 139 108 255;
 
-  --viz-surface: #101013;
-  --ink-muted: #8b8b95;
-  --gridline: #1e1e24;
-  --baseline: #30303a;
-  --profit: #0ca30c;
-  --profit-fill: #0ca30c;
-  --loss: #d03b3b;
-  --neutral-mid: #383835;
+  --viz-surface: #080b18;
+  --ink-muted: #8f97b5;
+  --gridline: #151b36;
+  --baseline: #262e50;
+  --profit: #34a874;
+  --profit-fill: #2b9a6b;
+  --loss: #d4565e;
+  --neutral-mid: #2f3654;
   --series-1: #3987e5;
   --series-2: #d95926;
   --series-3: #199e70;
@@ -1424,4 +1429,200 @@ body.dashboard-is-dragging * {
 .journal-markdown img {
   max-width: 100%;
   border-radius: 6px;
+}
+
+/* Time-picker columns: no visible scrollbar. The mouse wheel and touch still scroll them,
+   and the top and bottom fade out so it's clear there are more numbers. */
+.time-column {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+}
+.time-column::-webkit-scrollbar {
+  display: none;
+}
+
+
+/* ------------------------------------------------------------------ */
+/* Dark theme atmosphere: soft colored light, richer cards, accents.   */
+/* ------------------------------------------------------------------ */
+.dark body {
+  background-image:
+    radial-gradient(1100px 620px at 8% -12%, rgb(var(--brand-glow) / 0.09), transparent 62%),
+    radial-gradient(900px 560px at 104% 2%, rgb(var(--violet-glow) / 0.07), transparent 60%),
+    radial-gradient(800px 500px at 50% 112%, rgb(var(--brand-glow) / 0.06), transparent 60%);
+  background-attachment: fixed;
+}
+
+.dark .card-sheen {
+  background-image: linear-gradient(180deg, rgb(255 255 255 / 0.035), rgb(255 255 255 / 0) 46%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.06),
+    0 1px 2px rgb(0 0 0 / 0.3),
+    0 14px 30px -18px rgb(0 0 0 / 0.65);
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+.dark .card-sheen:hover {
+  border-color: color-mix(in srgb, var(--brand) 24%, var(--border));
+}
+
+/* Sidebar: a faint tinted glass panel, and a glowing marker on the current page. */
+.dark .journal-sidebar-nav-link[aria-current="page"] {
+  background-image: linear-gradient(
+    90deg,
+    rgb(var(--brand-glow) / 0.2),
+    rgb(var(--brand-glow) / 0.05)
+  );
+  box-shadow: inset 0 0 0 1px rgb(var(--brand-glow) / 0.2);
+  color: var(--foreground);
+}
+.dark .journal-sidebar-nav-link[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 22%;
+  bottom: 22%;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--brand);
+  box-shadow: 0 0 12px rgb(var(--brand-glow) / 0.8);
+}
+
+/* Primary buttons and chips get a soft glow in the accent color. */
+.dark .bg-primary {
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.25) inset, 0 6px 18px -8px rgb(var(--brand-glow) / 0.65);
+}
+.dark .journal-date-selected .journal-calendar-date {
+  box-shadow: 0 6px 16px -6px rgb(var(--brand-glow) / 0.7);
+}
+
+/* Text selection picks up the accent. */
+.dark ::selection {
+  background: rgb(var(--brand-glow) / 0.32);
+}
+
+/* Slim, tinted scrollbars across the app. */
+.dark * {
+  scrollbar-color: #1b2240 transparent;
+}
+.dark ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #1b2240;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #283153;
+  background-clip: content-box;
+}
+
+/* Notes (markdown) match the new palette. */
+.dark .journal-markdown blockquote {
+  border-left-color: color-mix(in srgb, var(--brand) 60%, #657386);
+  color: #a9b3d1;
+}
+.dark .journal-markdown pre {
+  background: #04060f;
+  border: 1px solid var(--border);
+}
+.dark .journal-markdown td,
+.dark .journal-markdown th {
+  border-color: var(--border);
+}
+
+.dark .time-column::-webkit-scrollbar {
+  display: none;
+}
+
+
+/* ------------------------------------------------------------------ */
+/* Shared: glass top bars (both themes) so the page glow shows through. */
+/* ------------------------------------------------------------------ */
+.sticky.backdrop-blur {
+  background-color: color-mix(in srgb, var(--background) 72%, transparent);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+}
+
+/* ------------------------------------------------------------------ */
+/* Light theme: airy periwinkle-white, crisp white cards, blue accent. */
+/* ------------------------------------------------------------------ */
+html:not(.dark) body {
+  background-image:
+    radial-gradient(1100px 600px at 6% -12%, rgb(var(--brand-glow) / 0.1), transparent 62%),
+    radial-gradient(900px 560px at 104% 0%, rgb(var(--violet-glow) / 0.08), transparent 60%),
+    radial-gradient(800px 500px at 50% 112%, rgb(var(--brand-glow) / 0.05), transparent 60%);
+  background-attachment: fixed;
+}
+html:not(.dark) .card-sheen {
+  box-shadow:
+    0 1px 2px rgb(18 28 70 / 0.06),
+    0 12px 28px -18px rgb(18 28 70 / 0.22);
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+html:not(.dark) .card-sheen:hover {
+  border-color: color-mix(in srgb, var(--brand) 30%, var(--border));
+  box-shadow:
+    0 1px 2px rgb(18 28 70 / 0.07),
+    0 16px 34px -18px rgb(31 111 235 / 0.28);
+}
+html:not(.dark) .journal-desktop-sidebar {
+  background-color: rgb(255 255 255 / 0.62);
+  backdrop-filter: blur(14px);
+}
+html:not(.dark) .journal-sidebar-nav-link[aria-current="page"] {
+  background-image: linear-gradient(90deg, rgb(var(--brand-glow) / 0.14), rgb(var(--brand-glow) / 0.03));
+  box-shadow: inset 0 0 0 1px rgb(var(--brand-glow) / 0.2);
+  color: var(--foreground);
+}
+html:not(.dark) .journal-sidebar-nav-link[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 22%;
+  bottom: 22%;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--brand);
+}
+html:not(.dark) .bg-primary {
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.28) inset, 0 6px 16px -8px rgb(var(--brand-glow) / 0.6);
+}
+html:not(.dark) .journal-date-selected .journal-calendar-date {
+  box-shadow: 0 6px 14px -6px rgb(var(--brand-glow) / 0.6);
+}
+html:not(.dark) * {
+  scrollbar-color: #c3cbe3 transparent;
+}
+html:not(.dark) ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+html:not(.dark) ::-webkit-scrollbar-thumb {
+  background: #c3cbe3;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+html:not(.dark) ::-webkit-scrollbar-thumb:hover {
+  background: #a7b2d3;
+  background-clip: content-box;
+}
+/* Notes in light mode: the old quote/code colors were made for a dark page. */
+html:not(.dark) .journal-markdown blockquote {
+  border-left-color: color-mix(in srgb, var(--brand) 55%, var(--border));
+  color: var(--muted-foreground);
+}
+html:not(.dark) .journal-markdown pre {
+  background: var(--muted);
+  border: 1px solid var(--border);
+}
+html:not(.dark) .journal-markdown td,
+html:not(.dark) .journal-markdown th {
+  border-color: var(--border);
 }

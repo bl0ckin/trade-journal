@@ -22,6 +22,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { postJson, useApi } from "@/lib/use-api";
 import { decodeImportFile } from "@/lib/decode-import";
 import { formatTimestamp, isTimeZone } from "@/lib/timezone";
+import { XLSX_MAX_BYTES } from "@/lib/xlsx-import";
+import { cn } from "@/lib/utils";
 import { dayKeyOf } from "@luxalgo/journal-core";
 import { ImportReconciliation } from "@/components/import-reconciliation";
 import type { ImportReview, ImportReviewOptions } from "@/lib/import-review";
@@ -33,7 +35,6 @@ import {
   AI_IMPORT_MAX_TEXT,
   type AiImportOptions as AiOptions,
 } from "@/lib/ai-import";
-import { XLSX_MAX_BYTES } from "@/lib/xlsx-import";
 import { Checkbox } from "@/components/ui/checkbox";
 
 interface BrokerInfo {
@@ -178,6 +179,8 @@ function FileImport() {
     setAiReviewed(false);
     setError(null);
   };
+
+  const [dragging, setDragging] = useState(false);
 
   const onFile = async (file: File) => {
     if (!validTimeZone) return;
@@ -401,13 +404,30 @@ function FileImport() {
               </p>
             )}
           </div>
-          <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed p-8 text-center hover:border-ring">
+          <label
+            className={cn(
+              "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed p-8 text-center hover:border-ring focus-within:ring-2 focus-within:ring-ring",
+              dragging && "border-ring bg-accent/40",
+            )}
+            onDragOver={(event) => {
+              event.preventDefault();
+              if (!busy && settingsData && validTimeZone) setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(event) => {
+              // Without this the browser opens the dropped file and leaves the page.
+              event.preventDefault();
+              setDragging(false);
+              const file = event.dataTransfer.files?.[0];
+              if (file && !busy && settingsData && validTimeZone) void onFile(file);
+            }}
+          >
             <FileUp className="h-6 w-6 text-muted-foreground" />
             <span className="text-sm">
               {fileName ||
                 (aiEnabled
-                  ? "Choose a statement for AI parsing"
-                  : "Choose a CSV / HTML / XML statement or an XTB Excel report")}
+                  ? "Drop or choose a statement for AI parsing"
+                  : "Drop or choose a CSV / HTML / XML statement or an XTB Excel report")}
             </span>
             <span className="text-xs text-muted-foreground">
               {aiEnabled ? (
@@ -433,7 +453,7 @@ function FileImport() {
                   : ".csv,.txt,.htm,.html,.tsv,.xml,.xlsx"
               }
               disabled={busy || !settingsData || !validTimeZone}
-              className="hidden"
+              className="sr-only"
               onChange={(event) => {
                 const file = event.target.files?.[0];
                 if (file) void onFile(file);

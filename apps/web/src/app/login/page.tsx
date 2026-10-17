@@ -12,15 +12,21 @@ export default function LoginPage() {
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError(null);
     try {
       await postJson("/api/auth", { password });
       router.push("/");
       router.refresh();
-    } catch {
-      setError("Wrong password");
+    } catch (caught) {
+      // Show the real reason (wrong password, too many attempts, server down).
+      setError(caught instanceof Error && caught.message ? caught.message : "Sign-in failed");
+      setBusy(false);
     }
   };
 
@@ -38,11 +44,16 @@ export default function LoginPage() {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               placeholder="Password"
+              aria-label="Password"
               autoFocus
             />
-            {error && <p className="text-center text-xs text-loss">{error}</p>}
-            <Button type="submit" className="w-full">
-              Unlock
+            {error && (
+              <p role="alert" className="text-center text-xs text-loss">
+                {error}
+              </p>
+            )}
+            <Button type="submit" className="w-full" disabled={busy}>
+              {busy ? "Unlocking…" : "Unlock"}
             </Button>
           </form>
         </CardContent>
