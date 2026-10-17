@@ -1,5 +1,4 @@
 import Database from "better-sqlite3";
-
 /**
  * Idempotent schema bootstrap, run by the app at startup. Self-hosted software
  * should never make its user run a migration tool; new columns arrive as
@@ -70,7 +69,10 @@ CREATE TABLE IF NOT EXISTS trades (
   rating INTEGER,
   stop_loss REAL,
   profit_target REAL,
-  reviewed_at TEXT
+  reviewed_at TEXT,
+  trade_quality INTEGER,
+  confidence INTEGER,
+  emotional_state TEXT
 );
 CREATE INDEX IF NOT EXISTS trades_account_closed ON trades (account_id, closed_at);
 CREATE INDEX IF NOT EXISTS trades_symbol ON trades (symbol);
@@ -106,8 +108,7 @@ CREATE TABLE IF NOT EXISTS folders (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   kind TEXT NOT NULL DEFAULT 'user',
-  created_at TEXT NOT NULL,
-  deleted_at TEXT
+  created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS notes (
@@ -199,19 +200,23 @@ CREATE TABLE IF NOT EXISTS import_batches (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS import_batch_unique ON import_batches(account_id, format, fingerprint);
 `;
-
 const hasColumn = (sqlite: Database.Database, table: string, name: string) =>
   (sqlite.pragma(`table_info(${table})`) as { name: string }[]).some(
     (column) => column.name === name,
   );
-
 function migrate(sqlite: Database.Database) {
   sqlite.exec(BOOTSTRAP_SQL);
-  if (!hasColumn(sqlite, "folders", "deleted_at")) {
-    sqlite.exec("ALTER TABLE folders ADD COLUMN deleted_at TEXT");
-  }
   if (!hasColumn(sqlite, "accounts", "ibkr_sync_time_zone")) {
     sqlite.exec("ALTER TABLE accounts ADD COLUMN ibkr_sync_time_zone TEXT");
+  }
+  // Additive upgrade: self-assessment fields on trades.
+  for (const [name, type] of [
+    ["trade_quality", "INTEGER"],
+    ["confidence", "INTEGER"],
+    ["emotional_state", "TEXT"],
+  ] as const) {
+    if (!hasColumn(sqlite, "trades", name))
+      sqlite.exec(`ALTER TABLE trades ADD COLUMN ${name} ${type}`);
   }
   // Additive upgrade: existing executions retain their fields and dedup hashes.
   if (!hasColumn(sqlite, "executions", "import_metadata_json")) {
@@ -227,10 +232,8 @@ function migrate(sqlite: Database.Database) {
     first_time = json_extract(bars_json, '$[0].time'),
     last_time = json_extract(bars_json, '$[#-1].time') WHERE bar_count = 0`);
 }
-
 const SETUP_DEADLINE_MS = 15_000;
 const sleeper = new Int32Array(new SharedArrayBuffer(4));
-
 /**
  * `next build` imports route modules from several workers at once and each one
  * opens the journal. SQLite refuses some lock upgrades immediately instead of
@@ -249,7 +252,6 @@ function retryWhileBusy<T>(step: () => T): T {
     }
   }
 }
-
 /** Opens the journal and brings its schema up to date; safe to call from many processes at once. */
 export function openJournalDatabase(file: string): Database.Database {
   const sqlite = new Database(file);

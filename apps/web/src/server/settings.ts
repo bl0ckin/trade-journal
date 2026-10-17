@@ -1,7 +1,8 @@
 import { eq } from "drizzle-orm";
-import { db, settings } from "@/db";
+import { accounts, db, settings } from "@/db";
 import { decryptJson, encryptJson } from "./crypto";
 import { EMPTY_DEFAULTS, type JournalDefaults } from "@/lib/journal-defaults";
+import { NO_RISK_LIMITS, parseRiskLimits, type RiskLimits } from "@/lib/risk-limits";
 import { DEFAULT_CONVERSION, parseCurrencyConversion } from "@/lib/currencies";
 import {
   AI_DEFAULT_MODELS,
@@ -39,6 +40,15 @@ export const getCurrencyConversion = () => {
   if (!saved) return DEFAULT_CONVERSION;
   // Invalid saved settings must not silently fall back to a different valuation.
   return parseCurrencyConversion(JSON.parse(saved));
+};
+
+/** The account new trades go into by default; null when unset or the account is gone. */
+export const getPrimaryAccountId = (): string | null => {
+  const id = getSetting("primaryAccountId");
+  if (!id) return null;
+  return db.select({ id: accounts.id }).from(accounts).where(eq(accounts.id, id)).get()
+    ? id
+    : null;
 };
 
 /** Journal display timezone (IANA), default UTC. */
@@ -96,15 +106,12 @@ export const normalizeAiBaseUrl = (value: string): string | null => {
     return null;
   }
 };
-
 export const getCompatibleBaseUrl = (): string | null => getSetting("compatibleBaseUrl");
-
 /** A saved key belongs to the server it was entered for, so a new URL drops it. */
 export const setCompatibleBaseUrl = (url: string, keepKey: boolean): void => {
   if (!keepKey && url !== getCompatibleBaseUrl()) setAiKey("compatible", null);
   setSetting("compatibleBaseUrl", url);
 };
-
 export const getAiProvider = (): AiProvider => {
   const selected = getSetting("aiProvider");
   if (isAiProvider(selected)) return selected;
@@ -124,7 +131,6 @@ export const aiProviderConfigured = (provider: AiProvider): boolean =>
   provider === "compatible"
     ? Boolean(getCompatibleBaseUrl() && getAiModel(provider))
     : getAiKey(provider) !== null;
-
 export const getAiSettings = (): AiSettingsPayload => {
   const aiProvider = getAiProvider();
   const connection = (provider: AiProvider): AiConnection => ({
@@ -148,4 +154,14 @@ export const getAiSettings = (): AiSettingsPayload => {
     aiModel: aiConnections[aiProvider].model,
     aiConnections,
   };
+};
+
+/** Daily loss / trade-count guard-rails; both unset by default. */
+export const getRiskLimits = (): RiskLimits => {
+  try {
+    const raw = getSetting("riskLimits");
+    return raw ? (parseRiskLimits(JSON.parse(raw)).limits ?? NO_RISK_LIMITS) : NO_RISK_LIMITS;
+  } catch {
+    return NO_RISK_LIMITS;
+  }
 };

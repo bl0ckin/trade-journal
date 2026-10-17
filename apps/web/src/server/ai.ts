@@ -38,7 +38,6 @@ const languageModel = (provider: AiProvider, apiKey: string | null, model: strin
     ? createOpenAI({ apiKey: apiKey! }).responses(model)
     : createAnthropic({ apiKey: apiKey! })(model);
 };
-
 export const runAi = async (prompt: string, maxOutputTokens = 1200): Promise<string> => {
   const provider = getAiProvider();
   if (!aiProviderConfigured(provider)) {

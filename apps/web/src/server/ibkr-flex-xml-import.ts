@@ -17,7 +17,7 @@ export const IBKR_FLEX_XML = { id: "ibkr-flex-xml", label: "Interactive Brokers 
 /** A Flex Query response or statement, optionally after an XML declaration and comments. */
 export const looksLikeFlexXml = (content: string): boolean =>
   /^\s*(?:<\?xml[^>]*\?>\s*)?(?:<!--[\s\S]*?-->\s*)*<(?:FlexQueryResponse|FlexStatements?)[\s>]/.test(
-    content.replace(/^﻿/, ""),
+    content.replace(/^\uFEFF/, ""),
   );
 
 /** Attribute maps for one element name, read the same way as the SDK's Flex parser. */
@@ -45,7 +45,6 @@ export const parseFlexXmlImport = (content: string, timeZone: string): ParsedImp
   const zone = canonicalImportTimeZone(timeZone);
   const errors: string[] = [];
   const warnings: string[] = [];
-
   const rows = elements(content, "Trade");
   const accountIds = new Set(
     [...elements(content, "FlexStatement"), ...rows]
@@ -76,7 +75,6 @@ export const parseFlexXmlImport = (content: string, timeZone: string): ParsedImp
     if (error instanceof BrokerError) requireValue(false, error.message);
     throw error;
   }
-
   const { timed, untimed } = brokerTradesToExecutions(parsed.trades);
   const dropped = rows.length - summaries.length - parsed.trades.length;
   if (dropped > 0)

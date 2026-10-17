@@ -2,8 +2,18 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { matchesFilters, type AnalysisFilters, type AnnotatedTrade } from "@luxalgo/journal-core";
 import { getTimeZone, getMultipliers, getJournalDefaults } from "./settings";
 import { db, trades } from "@/db";
+import { readFilters } from "@luxalgo/journal-core";
+import { readExtraFilters, type ExtraFilters } from "@/lib/extra-filters";
+import { parseEmotions } from "@/lib/emotions";
+import { resolveMarket } from "@/lib/markets";
 
-export type TradeFilters = AnalysisFilters & { accountIds?: string[] };
+export type TradeFilters = AnalysisFilters & ExtraFilters & { accountIds?: string[] };
+
+/** Core filters plus the journal's own psychology filters, from a request's query string. */
+export const readTradeFilters = (params: URLSearchParams): TradeFilters => ({
+  ...readFilters(params),
+  ...readExtraFilters(params),
+});
 
 export type TradeRow = typeof trades.$inferSelect;
 
@@ -21,8 +31,9 @@ const context = () => ({ multipliers: getMultipliers(), defaults: getJournalDefa
 export const rowToTrade = (row: TradeRow, config = context()): AnnotatedTrade => {
   const multiplier = config.multipliers[row.symbol];
   const defaults = config.defaults;
+  const market = resolveMarket(row.assetClass, row.symbol);
   const missingMultiplier =
-    multiplier == null && ["futures", "option", "forex", "cfd"].includes(row.assetClass ?? "");
+    multiplier == null && ["futures", "option", "forex", "cfd"].includes(market ?? "");
   const notional = missingMultiplier
     ? 0
     : Math.abs(row.avgEntry * row.quantity * (multiplier ?? 1));
@@ -42,7 +53,8 @@ export const rowToTrade = (row: TradeRow, config = context()): AnnotatedTrade =>
     key: row.key,
     accountId: row.accountId,
     symbol: row.symbol,
-    assetClass: (row.assetClass ?? undefined) as AnnotatedTrade["assetClass"],
+    // Trades without a stored market fall back to a guess from the ticker (BTCUSDT → crypto, ES → futures, else stocks).
+    assetClass: (market ?? undefined) as AnnotatedTrade["assetClass"],
     direction: row.direction,
     status,
     contractMultiplier: multiplier,
@@ -78,7 +90,13 @@ export const rowToTrade = (row: TradeRow, config = context()): AnnotatedTrade =>
 export const queryTrades = (
   filters: TradeFilters = {},
 ): { rows: TradeRow[]; trades: AnnotatedTrade[] } => {
-  const effective = { ...filters, accounts: filters.accounts ?? filters.accountIds?.join(",") };
+  const { emotion, qualityMin, qualityMax, confidenceMin, confidenceMax, ...rest } = filters;
+  // Market is matched here (not in SQL or the core predicate) so a guessed market counts too.
+  const { assetClass: market, ...coreFilters } = rest;
+  const effective = {
+    ...coreFilters,
+    accounts: filters.accounts ?? filters.accountIds?.join(","),
+  };
   const accountIds = effective.accounts
     ?.split(",")
     .map((id) => id.trim())
@@ -93,7 +111,6 @@ export const queryTrades = (
         effective.direction
           ? eq(trades.direction, effective.direction as "long" | "short")
           : undefined,
-        effective.assetClass ? eq(trades.assetClass, effective.assetClass) : undefined,
       ),
     )
     .orderBy(asc(trades.openedAt))
@@ -102,7 +119,29 @@ export const queryTrades = (
   const config = context();
   const pairs = all
     .map((row) => ({ row, trade: rowToTrade(row, config) }))
-    .filter(({ trade }) => matchesFilters(trade, effective, timeZone));
+    .filter(({ trade }) => matchesFilters(trade, effective, timeZone))
+    .filter(({ row, trade }) => {
+      if (market && trade.assetClass !== market) return false;
+      const wanted = emotion
+        ?.split(",")
+        .map((item) => item.trim().toLowerCase())
+        .filter(Boolean);
+      if (wanted?.length) {
+        const states = parseEmotions(row.emotionalState).map((item) => item.toLowerCase());
+        if (!wanted.some((item) => states.includes(item))) return false;
+      }
+      for (const [value, min, max] of [
+        [row.tradeQuality, qualityMin, qualityMax],
+        [row.confidence, confidenceMin, confidenceMax],
+      ] as const) {
+        if (min === undefined && max === undefined) continue;
+        // Trades without a score cannot satisfy a score filter.
+        if (value === null) return false;
+        if (min !== undefined && value < Number(min)) return false;
+        if (max !== undefined && value > Number(max)) return false;
+      }
+      return true;
+    });
   return {
     rows: pairs.map(({ row, trade }) => ({ ...row, status: trade.status })),
     trades: pairs.map((p) => p.trade),

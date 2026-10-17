@@ -6,6 +6,7 @@ import { nowIso } from "./ids";
 import { brokerTradesToExecutions, untimedFillsReason } from "./broker-trades";
 import { insertExecutions, type InsertResult } from "./executions";
 import { getImportTimeZone } from "./settings";
+import { withAlpacaShortSides } from "./alpaca-fills";
 import { requireValue } from "./api";
 import {
   assertIbkrSyncTimeZone,
@@ -40,6 +41,8 @@ export const syncAccount = async (accountId: string): Promise<SyncOutcome> => {
     broker: account.broker as BrokerId,
     credentials,
     ...(statementTimeZone !== undefined ? { statementTimeZone } : {}),
+    // The SDK drops Alpaca's "sell_short" fills (the sale that opens a short); see alpaca-fills.ts.
+    ...(account.broker === "alpaca" ? { fetch: withAlpacaShortSides() } : {}),
     // Some brokers rotate tokens on every fetch (Questrade): persist or die.
     onCredentialsRotated: (next: Record<string, string>) => {
       db.update(accounts)
@@ -93,4 +96,27 @@ export const syncAccount = async (accountId: string): Promise<SyncOutcome> => {
   }
 
   return { accountId, ...result, equity, positions: positions.length, syncedAt };
+};
+
+// One sync per account at a time, for the UI button, the Accounts page and the background job.
+// A manual click and the scheduler can ask for the same account together; later callers join the
+// sync already running instead of hitting the broker twice. `syncAccount` above stays unlocked on
+// purpose: its own transaction checks (e.g. IBKR timezone provenance) must hold even when two
+// syncs overlap. Kept on globalThis because route handlers and the instrumentation hook can be
+// bundled separately.
+const globalSync = globalThis as typeof globalThis & {
+  __journalSyncInFlight?: Map<string, Promise<SyncOutcome>>;
+};
+const inFlight = (globalSync.__journalSyncInFlight ??= new Map<string, Promise<SyncOutcome>>());
+
+export const isSyncing = (accountId: string): boolean => inFlight.has(accountId);
+
+export const syncAccountExclusive = (accountId: string): Promise<SyncOutcome> => {
+  const running = inFlight.get(accountId);
+  if (running) return running;
+  const next: Promise<SyncOutcome> = syncAccount(accountId).finally(() => {
+    if (inFlight.get(accountId) === next) inFlight.delete(accountId);
+  });
+  inFlight.set(accountId, next);
+  return next;
 };

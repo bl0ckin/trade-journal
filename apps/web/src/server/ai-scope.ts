@@ -5,6 +5,7 @@ import {
   type AnnotatedTrade,
 } from "@luxalgo/journal-core";
 import { db, accounts, playbooks } from "@/db";
+import { EXTRA_FILTER_KEYS, type ExtraFilters } from "@/lib/extra-filters";
 import { describeFilters } from "@/lib/filter-description";
 import { requireValue } from "./api";
 import { getTimeZone } from "./settings";
@@ -30,10 +31,11 @@ export function readAiRequest(value: unknown, field: "question" | "date") {
     body.filters && typeof body.filters === "object" && !Array.isArray(body.filters),
     "filters is required (use {} for all trades)",
   );
-  const filters: AnalysisFilters = {};
+  const filters: AnalysisFilters & ExtraFilters = {};
   for (const [key, raw] of Object.entries(body.filters)) {
     requireValue(
-      FILTER_KEYS.includes(key as (typeof FILTER_KEYS)[number]),
+      FILTER_KEYS.includes(key as (typeof FILTER_KEYS)[number]) ||
+        EXTRA_FILTER_KEYS.includes(key as (typeof EXTRA_FILTER_KEYS)[number]),
       "Unknown journal filter",
     );
     requireValue(
@@ -67,7 +69,7 @@ export function readAiRequest(value: unknown, field: "question" | "date") {
         v.split(",").every((d) => /^[0-6]$/.test(d.trim())),
         "Invalid weekdays filter",
       );
-    filters[key as keyof AnalysisFilters] = v;
+    (filters as Record<string, string>)[key] = v;
   }
   requireValue(
     !filters.from || !filters.to || filters.from <= filters.to,

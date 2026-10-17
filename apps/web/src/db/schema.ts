@@ -141,6 +141,11 @@ export const trades = sqliteTable(
     stopLoss: real("stop_loss"),
     profitTarget: real("profit_target"),
     reviewedAt: text("reviewed_at"),
+    /** 1-10 self-assessment of how well the trade followed the plan. */
+    tradeQuality: integer("trade_quality"),
+    /** 1-10 confidence going into the trade. */
+    confidence: integer("confidence"),
+    emotionalState: text("emotional_state"),
   },
   (table) => [
     index("trades_account_closed").on(table.accountId, table.closedAt),
@@ -164,7 +169,6 @@ export const folders = sqliteTable("folders", {
     .notNull()
     .default("user"),
   createdAt: text("created_at").notNull(),
-  deletedAt: text("deleted_at"),
 });
 
 export const notes = sqliteTable(

@@ -1,11 +1,20 @@
-import { and, count, desc, eq } from "drizzle-orm";
-import { db, accounts, propAccounts, propEntries, propReceipts, propAudit } from "@/db";
+import { and, count, desc, eq, inArray } from "drizzle-orm";
+import {
+  db,
+  accounts,
+  attachments,
+  propAccounts,
+  propEntries,
+  propReceipts,
+  propAudit,
+} from "@/db";
 import { requireValue, RequestError } from "./api";
 import { newId, nowIso } from "./ids";
-import { getTimeZone } from "./settings";
+import { getSetting, getTimeZone, setSetting } from "./settings";
 import {
   currencyDigits,
   toMinor,
+  fromMinor,
   expectedPayout,
   receivedPayout,
   PROP_PROGRAMS,
@@ -16,6 +25,7 @@ import {
   type PropEntry,
   type PropReceipt,
   type PropData,
+  type PropTemplate,
 } from "@/lib/prop-firms";
 export class PropConflict extends RequestError {}
 export const propToday = () =>
@@ -25,10 +35,21 @@ export const propToday = () =>
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
+const TEMPLATE_KEY = "propTemplates";
+/** Templates live in the settings table, so no schema change is needed. */
+export const propTemplates = (): PropTemplate[] => {
+  try {
+    const saved = JSON.parse(getSetting(TEMPLATE_KEY) ?? "[]");
+    return Array.isArray(saved) ? (saved as PropTemplate[]) : [];
+  } catch {
+    return [];
+  }
+};
 export const propData = (): PropData => ({
   accounts: db.select().from(propAccounts).all() as PropAccount[],
   entries: db.select().from(propEntries).all() as PropEntry[],
   receipts: db.select().from(propReceipts).all() as PropReceipt[],
+  templates: propTemplates(),
   today: propToday(),
 });
 const text = (v: unknown, title: string, max = 200, required = true) => {
@@ -108,12 +129,32 @@ const details = (body: Record<string, unknown>) => ({
   reference: text(body.reference ?? "", "a reference up to 200 characters", 200, false),
   notes: text(body.notes ?? "", "notes up to 5,000 characters", 5000, false),
 });
+/** Reasons are optional; the audit trail records a default when none is given. */
+const optionalReason = (body: Record<string, unknown>, fallback: string) =>
+  text(body.reason ?? "", "a reason up to 500 characters", 500, false) || fallback;
 const editReason = (body: Record<string, unknown>, old: unknown) =>
-  old ? text(body.reason, "a reason for this change", 500) : "Created";
+  old ? optionalReason(body, "Edited") : "Created";
+const optionalMoney = (v: unknown, code: string) => {
+  if (v === "" || v == null) return "";
+  money(v, code);
+  return String(v).trim();
+};
 export function mutateProp(body: Record<string, unknown>) {
   return db.transaction(() => {
     const id = idValue(body.id);
     if (body.action === "account.save") {
+      const copies = body.count == null || body.count === "" ? 1 : Number(body.count);
+      requireValue(
+        Number.isInteger(copies) && copies >= 1 && copies <= 50,
+        "Enter a number of accounts from 1 to 50.",
+      );
+      if (copies > 1 && body.revision === 0) {
+        // Duplicates share every detail and each gets its own cost; retries stay idempotent.
+        const base = text(body.name, "an account or attempt name");
+        for (let i = 1; i <= copies; i++)
+          mutateProp({ ...body, count: 1, id: i === 1 ? id : `${id}-${i}`, name: `${base} #${i}` });
+        return { id };
+      }
       const old = db.select().from(propAccounts).where(eq(propAccounts.id, id)).get();
       const code = currency(body.currency),
         parentId = optionalId(body.parentId),
@@ -226,6 +267,171 @@ export function mutateProp(body: Record<string, unknown>) {
         .onConflictDoUpdate({ target: propAccounts.id, set: updated })
         .run();
       audit("account", id, old, updated, editReason(body, old));
+      const cost = body.expense as Record<string, unknown> | undefined;
+      if (!old && cost && typeof cost === "object" && String(cost.amount ?? "").trim() !== "")
+        mutateProp({
+          action: "entry.save",
+          id: newId(),
+          revision: 0,
+          kind: "expense",
+          accountId: id,
+          firm: values.firm,
+          currency: code,
+          category: cost.category ?? "evaluation",
+          amount: cost.amount,
+          occurredOn: values.openedOn,
+          reference: "",
+          notes: "",
+        });
+      return { id };
+    }
+    if (body.action === "account.pass" || body.action === "account.fail") {
+      const old = db.select().from(propAccounts).where(eq(propAccounts.id, id)).get();
+      requireValue(old, "Account not found.");
+      checkRevision(old, body.revision);
+      const passing = body.action === "account.pass";
+      requireValue(
+        old.status === "active" && !old.archived,
+        "Only active accounts can be marked passed or failed.",
+      );
+      requireValue(
+        !passing || ["evaluation", "verification"].includes(old.program),
+        "Only an evaluation or verification can be marked passed.",
+      );
+      const today = propToday();
+      const size = old.sizeMinor == null ? "" : fromMinor(old.sizeMinor, old.currency);
+      mutateProp({
+        action: "account.save",
+        id,
+        revision: old.revision,
+        firm: old.firm,
+        name: old.name,
+        program: old.program,
+        status: passing ? "passed" : "breached",
+        currency: old.currency,
+        size,
+        parentId: old.parentId ?? "",
+        journalAccountId: old.journalAccountId ?? "",
+        openedOn: old.openedOn,
+        closedOn: today,
+        renewalOn: "",
+        renewalAmount: "",
+        notes: old.notes,
+        reason: optionalReason(body, passing ? "Marked passed" : "Marked failed"),
+      });
+      // A passed evaluation continues as a funded account linked to it.
+      if (passing)
+        mutateProp({
+          action: "account.save",
+          id: newId(),
+          revision: 0,
+          firm: old.firm,
+          name: `${old.name} (Funded)`,
+          program: "funded",
+          status: "active",
+          currency: old.currency,
+          size,
+          parentId: id,
+          journalAccountId: "",
+          openedOn: today,
+          closedOn: "",
+          renewalOn: "",
+          renewalAmount: "",
+          notes: "",
+        });
+      return { id };
+    }
+    if (body.action === "account.bulk") {
+      const op = choice(body.op, ["pass", "fail", "delete"] as const, "a bulk action");
+      requireValue(
+        Array.isArray(body.ids) && body.ids.length > 0 && body.ids.length <= 200,
+        "Choose 1 to 200 accounts.",
+      );
+      let done = 0;
+      for (const raw of body.ids as unknown[]) {
+        const accountId = idValue(raw);
+        const row = db.select().from(propAccounts).where(eq(propAccounts.id, accountId)).get();
+        // Ineligible accounts (already resolved, archived, or not an evaluation) are skipped.
+        const eligible =
+          row &&
+          (op === "delete" ||
+            (row.status === "active" &&
+              !row.archived &&
+              (op === "fail" || ["evaluation", "verification"].includes(row.program))));
+        if (!row || !eligible) continue;
+        mutateProp({ action: `account.${op}`, id: accountId, revision: row.revision });
+        done++;
+      }
+      return { id, done };
+    }
+    if (body.action === "account.delete") {
+      const old = db.select().from(propAccounts).where(eq(propAccounts.id, id)).get();
+      requireValue(old, "Account not found.");
+      checkRevision(old, body.revision);
+      const rows = db
+        .select({ id: propEntries.id, parentId: propEntries.parentId })
+        .from(propEntries)
+        .where(eq(propEntries.accountId, id))
+        .all();
+      const entryIds = rows.map((r) => r.id);
+      // Later phases or resets stay; they just no longer follow this account.
+      db.update(propAccounts).set({ parentId: null }).where(eq(propAccounts.parentId, id)).run();
+      if (entryIds.length) {
+        db.delete(propReceipts).where(inArray(propReceipts.payoutId, entryIds)).run();
+        const refundIds = rows.filter((r) => r.parentId).map((r) => r.id);
+        if (refundIds.length)
+          db.delete(propEntries).where(inArray(propEntries.id, refundIds)).run();
+        db.delete(propEntries)
+          .where(inArray(propEntries.accountId, [id]))
+          .run();
+        db.delete(attachments)
+          .where(
+            and(eq(attachments.ownerType, "prop-entry"), inArray(attachments.ownerId, entryIds)),
+          )
+          .run();
+        db.delete(propAudit)
+          .where(and(eq(propAudit.entityType, "entry"), inArray(propAudit.entityId, entryIds)))
+          .run();
+      }
+      db.delete(attachments)
+        .where(and(eq(attachments.ownerType, "prop-account"), eq(attachments.ownerId, id)))
+        .run();
+      db.delete(propAudit)
+        .where(and(eq(propAudit.entityType, "account"), eq(propAudit.entityId, id)))
+        .run();
+      db.delete(propAccounts).where(eq(propAccounts.id, id)).run();
+      return { id };
+    }
+    if (body.action === "template.save") {
+      const code = currency(body.currency);
+      const template: PropTemplate = {
+        id,
+        name: text(body.name, "a template name", 80),
+        firm: text(body.firm, "a firm name"),
+        program: choice(body.program, PROP_PROGRAMS, "an account program"),
+        currency: code,
+        size: optionalMoney(body.size, code),
+        cost: optionalMoney(body.cost, code),
+        category: choice(body.category ?? "evaluation", EXPENSE_CATEGORIES, "a cost type"),
+      };
+      const list = propTemplates();
+      requireValue(
+        !list.some((t) => t.id !== id && t.name.toLowerCase() === template.name.toLowerCase()),
+        "A template with that name already exists.",
+      );
+      requireValue(list.length < 200 || list.some((t) => t.id === id), "Template limit reached.");
+      setSetting(
+        TEMPLATE_KEY,
+        JSON.stringify(
+          list.some((t) => t.id === id)
+            ? list.map((t) => (t.id === id ? template : t))
+            : [...list, template],
+        ),
+      );
+      return { id };
+    }
+    if (body.action === "template.delete") {
+      setSetting(TEMPLATE_KEY, JSON.stringify(propTemplates().filter((t) => t.id !== id)));
       return { id };
     }
     if (body.action === "account.archive") {
@@ -240,7 +446,13 @@ export function mutateProp(body: Record<string, unknown>) {
         updatedAt: nowIso(),
       };
       db.update(propAccounts).set(updated).where(eq(propAccounts.id, id)).run();
-      audit("account", id, old, updated, text(body.reason, "a reason", 500));
+      audit(
+        "account",
+        id,
+        old,
+        updated,
+        optionalReason(body, body.archived ? "Archived" : "Restored"),
+      );
       return { id };
     }
     if (body.action === "entry.save") {
@@ -395,6 +607,46 @@ export function mutateProp(body: Record<string, unknown>) {
         .onConflictDoUpdate({ target: propEntries.id, set: updated })
         .run();
       audit("entry", id, old, updated, editReason(body, old));
+      // Quick payout: a new request that has already been paid is recorded and completed in one step.
+      const received = body.received as Record<string, unknown> | undefined;
+      if (
+        !old &&
+        kind === "payout" &&
+        received &&
+        typeof received === "object" &&
+        String(received.amount ?? "").trim() !== ""
+      ) {
+        mutateProp({
+          action: "receipt.add",
+          id: newId(),
+          payoutId: id,
+          revision: updated.revision,
+          kind: "receipt",
+          amount: received.amount,
+          occurredOn: received.occurredOn || values.occurredOn,
+          reference: "",
+          notes: "",
+        });
+        const current = db.select().from(propEntries).where(eq(propEntries.id, id)).get()!;
+        mutateProp({
+          action: "entry.save",
+          id,
+          revision: current.revision,
+          kind: "payout",
+          accountId,
+          firm: values.firm,
+          currency: code,
+          amount: body.amount,
+          splitPercent: body.splitPercent,
+          fee: body.fee ?? "0",
+          occurredOn: values.occurredOn,
+          dueOn: values.dueOn ?? "",
+          status: "completed",
+          reference: values.reference,
+          notes: values.notes,
+          reason: "Received in full",
+        });
+      }
       return { id };
     }
     if (body.action === "entry.void") {
@@ -435,7 +687,7 @@ export function mutateProp(body: Record<string, unknown>) {
         updatedAt: nowIso(),
       };
       db.update(propEntries).set(updated).where(eq(propEntries.id, id)).run();
-      audit("entry", id, old, updated, text(body.reason, "a reason", 500));
+      audit("entry", id, old, updated, optionalReason(body, body.voided ? "Voided" : "Restored"));
       return { id };
     }
     if (body.action === "receipt.add" || body.action === "receipt.void") {
@@ -524,7 +776,7 @@ export function mutateProp(body: Record<string, unknown>) {
         { payout: updatedPayout, receipt: updated },
         body.action === "receipt.add"
           ? `Recorded ${updated.kind}`
-          : text(body.reason, "a reason", 500),
+          : optionalReason(body, "Receipt changed"),
       );
       return { id };
     }
