@@ -3,6 +3,7 @@ import { useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { dayKeyOf, FILTER_KEYS, readFilters, type AnalysisFilters } from "@luxalgo/journal-core";
 import { useApi } from "@/lib/use-api";
+import { EXTRA_FILTER_KEYS, readExtraFilters, type ExtraFilters } from "@/lib/extra-filters";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -20,7 +21,10 @@ export const useFilters = () => {
   const range = params.get("range") ?? "all",
     timeZone = data?.timeZone ?? "UTC";
   return useMemo(() => {
-    const f = readFilters(new URLSearchParams(params.toString()));
+    const f = {
+      ...readFilters(new URLSearchParams(params.toString())),
+      ...readExtraFilters(new URLSearchParams(params.toString())),
+    };
     const today = dayKeyOf(new Date().toISOString(), timeZone);
     if (range === "ytd") {
       f.from = `${today.slice(0, 4)}-01-01`;
@@ -43,7 +47,16 @@ export const useFilters = () => {
   }, [params, range, timeZone]);
 };
 export type Filters = ReturnType<typeof useFilters>;
-export function FilterBar({ title, actions }: { title: string; actions?: React.ReactNode }) {
+export function FilterBar({
+  title,
+  actions,
+  beforeFilters,
+}: {
+  title: string;
+  actions?: React.ReactNode;
+  /** Shown just left of the account picker (only on pages that show filters). */
+  beforeFilters?: React.ReactNode;
+}) {
   const router = useRouter(),
     pathname = usePathname(),
     params = useSearchParams();
@@ -52,12 +65,13 @@ export function FilterBar({ title, actions }: { title: string; actions?: React.R
     ["/", "/reports", "/trades", "/calendar", "/journal", "/playbooks"].includes(pathname) ||
     pathname.startsWith("/journal/");
   const [open, setOpen] = useState(false),
-    [draft, setDraft] = useState<AnalysisFilters>({});
+    [draft, setDraft] = useState<AnalysisFilters & ExtraFilters>({});
   const filterTitle = useRef<HTMLHeadingElement>(null);
   const count = Object.keys(filters.values).filter((k) => !["from", "to"].includes(k)).length;
   const apply = () => {
     const next = new URLSearchParams(params.toString());
     FILTER_KEYS.forEach((k) => next.delete(k));
+    EXTRA_FILTER_KEYS.forEach((k) => next.delete(k));
     next.set("range", "custom");
     for (const [k, v] of Object.entries(draft)) if (v) next.set(k, v);
     router.replace(`${pathname}?${next}`);
@@ -69,6 +83,7 @@ export function FilterBar({ title, actions }: { title: string; actions?: React.R
         <h1 className="mr-auto min-w-0 text-base font-semibold tracking-tight">{title}</h1>
         {showFilters && (
           <>
+            {beforeFilters}
             <AccountSelector />
             <div className="flex max-w-full shrink-0 items-center rounded-md border p-0.5">
               {["7d", "30d", "90d", "ytd", "all"].map((range) => (

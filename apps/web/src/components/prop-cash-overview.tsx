@@ -85,7 +85,29 @@ export function PropCashSummary({
           <p className="mt-3 text-xs text-muted-foreground">
             Payouts received + refunds − money spent
           </p>
-          <p className="mt-4 border-t pt-3 text-xs text-muted-foreground">
+          {!privacy && currency && summary.spent > 0 && (
+            <div className="mt-4 border-t pt-3">
+              <div className="mb-1.5 flex justify-between text-xs text-muted-foreground">
+                <span>Costs recovered</span>
+                <span className="tabular-nums text-foreground">
+                  {Math.round(((summary.refunds + summary.received) / summary.spent) * 100)}%
+                </span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${Math.min(100, ((summary.refunds + summary.received) / summary.spent) * 100)}%`,
+                    background:
+                      summary.refunds + summary.received >= summary.spent
+                        ? "var(--profit-fill)"
+                        : "var(--brand)",
+                  }}
+                />
+              </div>
+            </div>
+          )}
+          <p className="mt-3 text-xs text-muted-foreground">
             Return on net cost{" "}
             <span className="text-foreground">
               {privacy

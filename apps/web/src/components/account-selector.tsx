@@ -1,16 +1,20 @@
 "use client";
 
-import { useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { FlaskConical, Settings2, WalletCards } from "lucide-react";
+import { Settings2, WalletCards } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "./ui/select";
-import { postJson, useApi } from "@/lib/use-api";
+import { useOnSynced } from "@/lib/sync-events";
+import { useApi } from "@/lib/use-api";
+import { fmtBalance } from "@/lib/utils";
+import { MonetaryValue } from "./privacy";
 
 interface AccountOption {
   id: string;
   name: string;
   broker: string;
   archivedAt: string | null;
+  currency: string;
+  balance: number;
 }
 
 /** Quick account switching; the full Filters panel still supports multiple accounts. */
@@ -19,11 +23,17 @@ export function AccountSelector() {
   const pathname = usePathname();
   const params = useSearchParams();
   const { data, error, refresh } = useApi<{ accounts: AccountOption[] }>("/api/accounts?summary=1");
-  const [loadingDemo, setLoadingDemo] = useState(false);
-  const [demoError, setDemoError] = useState("");
+  useOnSynced(refresh);
   const selected = params.get("accounts")?.split(",").filter(Boolean) ?? [];
   const accounts = data?.accounts.filter((a) => !a.archivedAt || selected.includes(a.id)) ?? [];
-  const demo = accounts.find((a) => a.broker === "demo");
+  const active = accounts.filter((account) => !account.archivedAt);
+  const allBalance =
+    active.length > 0 && active.every((account) => account.currency === active[0]!.currency)
+      ? {
+          value: active.reduce((sum, account) => sum + account.balance, 0),
+          currency: active[0]!.currency,
+        }
+      : null;
   const value = selected.length > 1 ? "multiple" : (selected[0] ?? "all");
   const label =
     selected.length > 1
@@ -38,63 +48,52 @@ export function AccountSelector() {
     router.replace(`${pathname}?${next.toString()}`, { scroll: false });
   }
 
-  async function select(value: string) {
-    setDemoError("");
-    if (value === "account-settings") {
-      router.push("/accounts");
-      return;
-    }
-    if (value !== "load-demo") return selectAccount(value);
-    setLoadingDemo(true);
-    try {
-      const result = await postJson<{ accountId: string }>("/api/demo", {});
-      refresh();
-      selectAccount(result.accountId);
-    } catch (cause) {
-      setDemoError(cause instanceof Error ? cause.message : "Could not load demo data.");
-    } finally {
-      setLoadingDemo(false);
-    }
+  function select(value: string) {
+    if (value === "account-settings") router.push("/accounts");
+    else selectAccount(value);
   }
 
   return (
     <div className="relative min-w-0 max-w-full">
-      <Select value={value} onValueChange={(value) => void select(value)} disabled={loadingDemo}>
+      <Select value={value} onValueChange={select}>
         <SelectTrigger
           aria-label="Select account"
           className="h-8 w-44 max-w-full rounded-lg text-xs"
         >
           <WalletCards className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate text-left">
-            {loadingDemo ? "Loading demo…" : label}
+            {label}
           </span>
         </SelectTrigger>
         <SelectContent className="rounded-2xl border-white/10 p-1 shadow-2xl" align="end">
           <SelectItem value="all" className="rounded-lg text-xs">
-            All accounts
+            <span className="flex w-full min-w-48 items-center justify-between gap-4">
+              All accounts
+              {allBalance !== null && (
+                <span className="tnum text-muted-foreground">
+                  <MonetaryValue>{fmtBalance(allBalance.value, allBalance.currency)}</MonetaryValue>
+                </span>
+              )}
+            </span>
           </SelectItem>
           {selected.length > 1 && (
             <SelectItem value="multiple" disabled className="text-xs">
               {label}
             </SelectItem>
           )}
-          {accounts
-            .filter((a) => a.broker !== "demo")
-            .map((account) => (
-              <SelectItem key={account.id} value={account.id} className="rounded-lg text-xs">
-                <span className="block max-w-64 truncate">
+          {accounts.map((account) => (
+            <SelectItem key={account.id} value={account.id} className="rounded-lg text-xs">
+              <span className="flex w-full min-w-48 items-center justify-between gap-4">
+                <span className="max-w-48 truncate">
                   {account.name}
                   {account.archivedAt ? " (archived)" : ""}
                 </span>
-              </SelectItem>
-            ))}
-          <div className="my-1 border-t" />
-          <SelectItem value={demo?.id ?? "load-demo"} className="rounded-lg text-xs">
-            <span className="flex items-center gap-2">
-              <FlaskConical className="h-3.5 w-3.5 text-muted-foreground" />
-              {demo?.name ?? "Load demo data"}
-            </span>
-          </SelectItem>
+                <span className="tnum text-muted-foreground">
+                  <MonetaryValue>{fmtBalance(account.balance, account.currency)}</MonetaryValue>
+                </span>
+              </span>
+            </SelectItem>
+          ))}
           <div className="my-1 border-t" />
           <SelectItem value="account-settings" className="rounded-lg text-xs">
             <span className="flex items-center gap-2">
@@ -104,9 +103,9 @@ export function AccountSelector() {
           </SelectItem>
         </SelectContent>
       </Select>
-      {(demoError || error) && (
+      {error && (
         <p role="alert" className="max-w-64 pt-1 text-xs text-destructive">
-          {demoError || error}
+          {error}
         </p>
       )}
     </div>

@@ -97,7 +97,14 @@ const dropAnimation: DropAnimation = {
   },
 };
 
-export function DashboardLayout({ widgets }: { widgets: Widget[] }) {
+export function DashboardLayout({
+  widgets,
+  balance,
+}: {
+  widgets: Widget[];
+  /** Shown at the left of the toolbar, where the layouts menu used to be. */
+  balance?: ReactNode;
+}) {
   const idsKey = JSON.stringify(widgets.map((widget) => widget.id));
   const ids = useMemo(() => JSON.parse(idsKey) as string[], [idsKey]);
   const initial = useMemo(() => normalizeArrangement(null, ids), [ids]);
@@ -288,7 +295,14 @@ export function DashboardLayout({ widgets }: { widgets: Widget[] }) {
   return (
     <div className="space-y-3 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">{balance}</div>
         <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">
+            {visible.length} of {widgets.length} cards
+          </span>
+          <span role="status" className="sr-only">
+            {feedback}
+          </span>
           <DashboardSavedLayouts
             layouts={state.layouts}
             current={current}
@@ -315,40 +329,34 @@ export function DashboardLayout({ widgets }: { widgets: Widget[] }) {
               )
             }
           />
-          <span className="text-xs text-muted-foreground">
-            {visible.length} of {widgets.length} cards
-          </span>
-          <span role="status" className="sr-only">
-            {feedback}
-          </span>
+          <DashboardCustomizer
+            widgets={widgets}
+            hidden={current.hidden}
+            open={edit}
+            onOpenChange={setEdit}
+            onVisibilityChange={(id, visible) => {
+              update((previous) => {
+                const layout = normalizeArrangement(previous.current, ids);
+                return {
+                  ...previous,
+                  current: {
+                    ...layout,
+                    hidden: visible
+                      ? layout.hidden.filter((hiddenId) => hiddenId !== id)
+                      : [...layout.hidden, id],
+                  },
+                };
+              });
+            }}
+            onShowAll={showAll}
+            onRestore={() =>
+              update(
+                (previous) => ({ ...previous, current: initial }),
+                "Original card order restored. All cards are shown.",
+              )
+            }
+          />
         </div>
-        <DashboardCustomizer
-          widgets={widgets}
-          hidden={current.hidden}
-          open={edit}
-          onOpenChange={setEdit}
-          onVisibilityChange={(id, visible) => {
-            update((previous) => {
-              const layout = normalizeArrangement(previous.current, ids);
-              return {
-                ...previous,
-                current: {
-                  ...layout,
-                  hidden: visible
-                    ? layout.hidden.filter((hiddenId) => hiddenId !== id)
-                    : [...layout.hidden, id],
-                },
-              };
-            });
-          }}
-          onShowAll={showAll}
-          onRestore={() =>
-            update(
-              (previous) => ({ ...previous, current: initial }),
-              "Original card order restored. All cards are shown.",
-            )
-          }
-        />
       </div>
       {hiddenCount > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm">

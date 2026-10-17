@@ -10,7 +10,6 @@ export const AI_IMPORT_HELP =
 export type AiImportProvider = Exclude<AiProvider, "compatible">;
 export const isAiImportProvider = (value: unknown): value is AiImportProvider =>
   value === "openai" || value === "anthropic";
-
 export interface AiImportOptions {
   provider: AiImportProvider;
   model: string;

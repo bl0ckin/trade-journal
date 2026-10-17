@@ -1,4 +1,5 @@
 import type { CurrencyScope } from "./currencies";
+import { readExtraFilters } from "@/lib/extra-filters";
 import {
   readFilters,
   dayKeyOf,
@@ -8,7 +9,7 @@ import {
   type RoundTrip,
 } from "@luxalgo/journal-core";
 
-export function calendarScope(filters: AnalysisFilters, year: number, month: number) {
+export function calendarScope<T extends AnalysisFilters>(filters: T, year: number, month: number) {
   const start = `${year}-${String(month).padStart(2, "0")}-01`;
   const end = `${year}-${String(month).padStart(2, "0")}-${new Date(Date.UTC(year, month, 0)).getUTCDate()}`;
   return {
@@ -135,7 +136,8 @@ export function calendarTradeHref(
   scope: { from: string; to: string },
   date?: string,
 ) {
-  const filters = readFilters(new URLSearchParams(query));
+  const source = new URLSearchParams(query);
+  const filters = { ...readFilters(source), ...readExtraFilters(source) };
   const params = new URLSearchParams({
     ...filters,
     from: date ?? scope.from,

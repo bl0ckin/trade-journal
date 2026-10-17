@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { FILTER_KEYS } from "@luxalgo/journal-core";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import {
   BarChart3,
   BookOpen,
@@ -25,6 +25,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { EXTRA_FILTER_KEYS } from "@/lib/extra-filters";
 import { LuxAlgoMark } from "@/components/luxalgo-mark";
 import { PrivacyToggle } from "./privacy";
 import { ThemeToggle } from "./theme";
@@ -34,15 +35,15 @@ import { HoverHint } from "./ui/tooltip";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/calendar", label: "Calendar", icon: CalendarDays },
-  { href: "/journal", label: "Daily journal", icon: NotebookPen },
   { href: "/trades", label: "Trades", icon: ListOrdered },
   { href: "/reports", label: "Reports", icon: BarChart3 },
-  { href: "/prop-firms", label: "Prop firms", icon: Landmark },
+  { href: "/calendar", label: "Calendar", icon: CalendarDays },
+  { href: "/journal", label: "Daily journal", icon: NotebookPen },
   { href: "/notebook", label: "Notebook", icon: BookText },
+  { href: "/missed", label: "Missed trades", icon: BookmarkPlus },
   { href: "/playbooks", label: "Playbooks", icon: BookOpen },
   { href: "/progress", label: "Progress", icon: ListChecks },
-  { href: "/missed", label: "Missed trades", icon: BookmarkPlus },
+  { href: "/prop-firms", label: "Prop firms", icon: Landmark },
 ] as const;
 
 const NAV_SETUP = [
@@ -66,10 +67,18 @@ function NavLink({
   active: boolean;
   collapsed?: boolean;
 }) {
+  const router = useRouter();
+  // Prefetched when you point at it, not all at once on every page load: those server
+  // renders otherwise compete with the page's own requests.
+  const warm = () => router.prefetch(href);
   return (
     <HoverHint content={collapsed ? label : null} side="right">
       <Link
         href={href}
+        prefetch={false}
+        onMouseEnter={warm}
+        onFocus={warm}
+        onTouchStart={warm}
         aria-current={active ? "page" : undefined}
         className={cn(
           "journal-sidebar-nav-link relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors",
@@ -140,7 +149,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     });
   }
   const filterQuery = new URLSearchParams();
-  for (const key of FILTER_KEYS) {
+  for (const key of [...FILTER_KEYS, ...EXTRA_FILTER_KEYS]) {
     const value = search.get(key);
     if (value) filterQuery.set(key, value);
   }
@@ -176,22 +185,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
         />
       ))}
     </nav>
-  );
-  const footer = (
-    <div className="journal-sidebar-footer space-y-1 border-t p-3 text-xs text-muted-foreground">
-      <div>
-        Open source ·{" "}
-        <a
-          href="https://github.com/LuxAlgo/trade-journal"
-          className="underline underline-offset-2 hover:text-foreground"
-          target="_blank"
-          rel="noreferrer"
-        >
-          GitHub
-        </a>
-      </div>
-      <div>Not investment advice.</div>
-    </div>
   );
   return (
     <div className="journal-shell min-h-dvh lg:flex">
@@ -233,7 +226,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
               <div className="border-t p-3">
                 <PrivacyToggle />
               </div>
-              {footer}
+              
             </DialogPrimitive.Content>
           </DialogPrimitive.Portal>
         </DialogPrimitive.Root>
@@ -284,7 +277,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <PrivacyToggle iconOnly={sidebarCollapsed} />
           </div>
         </div>
-        {footer}
+        
       </aside>
       <PageTransition>{children}</PageTransition>
     </div>

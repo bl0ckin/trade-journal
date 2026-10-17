@@ -1,4 +1,6 @@
 import type { AnalysisFilters } from "@luxalgo/journal-core";
+import { EXTRA_FILTER_NAMES, type ExtraFilters } from "./extra-filters";
+import { marketLabel } from "./markets";
 const names: Record<string, string> = {
   accounts: "Accounts",
   from: "From",
@@ -10,7 +12,8 @@ const names: Record<string, string> = {
   playbookId: "Strategy",
   direction: "Direction",
   status: "Outcome",
-  assetClass: "Asset class",
+  assetClass: "Market",
+  ...EXTRA_FILTER_NAMES,
   reviewed: "Reviewed",
   ratingMin: "Minimum rating",
   ratingMax: "Maximum rating",
@@ -35,7 +38,7 @@ const names: Record<string, string> = {
   exitBefore: "Exit before",
 };
 export function describeFilters(
-  filters: AnalysisFilters,
+  filters: AnalysisFilters & ExtraFilters,
   accounts: { id: string; name: string }[] = [],
   playbooks: { id: string; name: string }[] = [],
   privateMode = false,
@@ -52,6 +55,7 @@ export function describeFilters(
             .join(", ");
         if (k === "playbookId")
           value = playbooks.find((p) => p.id === v)?.name ?? "Selected strategy";
+        if (k === "assetClass") value = marketLabel(v);
         if (k === "weekdays")
           value = v
             .split(",")

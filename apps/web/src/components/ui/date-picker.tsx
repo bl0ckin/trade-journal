@@ -7,6 +7,7 @@ import { CalendarDays } from "lucide-react";
 import { Input } from "./input";
 import { Button } from "./button";
 import { formatDateInput, parseDateInput } from "@/lib/date-input";
+import { useDialogModal } from "@/lib/use-dialog-modal";
 
 // The calendar is loaded on demand, not in every page's initial filter-bar bundle.
 const Calendar = dynamic(() => import("./calendar").then((module) => module.Calendar), {
@@ -29,6 +30,11 @@ export function DatePicker({
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const { anchor, modal, sync } = useDialogModal<HTMLSpanElement>();
+  const changeOpen = (next: boolean) => {
+    if (next) sync();
+    setOpen(next);
+  };
   const [draft, setDraft] = useState(value);
   const [invalid, setInvalid] = useState(false);
   const errorId = useId();
@@ -46,9 +52,9 @@ export function DatePicker({
   const today = formatDateInput(new Date());
   const selected = parseDateInput(value);
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
+    <Popover.Root open={open} onOpenChange={changeOpen} modal={modal}>
       <Popover.Anchor asChild>
-        <span className="relative block min-w-0">
+        <span ref={anchor} className="relative block min-w-0">
           <Input
             value={draft}
             aria-label={label}
@@ -67,7 +73,7 @@ export function DatePicker({
             onKeyDown={(event) => {
               if (event.key === "ArrowDown") {
                 event.preventDefault();
-                setOpen(true);
+                changeOpen(true);
               }
               if (event.key === "Escape") {
                 setDraft(value);

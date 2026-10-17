@@ -1,10 +1,10 @@
 "use client";
-import { useImperativeHandle, useRef, useState, type Ref } from "react";
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
-import { ChevronDown, FileText } from "lucide-react";
+import { ChevronDown, FileText, Settings2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { fieldClass } from "@/components/filter-fields";
 import { postJson, useApi } from "@/lib/use-api";
+import { TemplateManager } from "@/components/template-manager";
 import { formatInlineSelection, remarkRepairSpacedEmphasis } from "@/lib/note-formatting";
 import { tradeLinkLabel, tradeMarkdownLink, type LinkableTrade } from "@/lib/trade-links";
 export function Markdown({ children }: { children: string }) {
@@ -39,25 +40,6 @@ export function Markdown({ children }: { children: string }) {
     </div>
   );
 }
-const BUILT_INS = [
-  {
-    id: "pre",
-    name: "Pre-market plan",
-    content:
-      "## Market context\n\n## Setups to watch\n\n## Risk limits\n- [ ] Confirm daily risk limit\n- [ ] Check scheduled events\n\n## My intention\n",
-  },
-  {
-    id: "review",
-    name: "Trade review",
-    content: "## Setup and thesis\n\n## Execution\n\n## What worked\n\n## What I will change\n",
-  },
-  {
-    id: "weekly",
-    name: "Weekly review",
-    content:
-      "## Wins this week\n\n## Repeated mistakes\n\n## Rules I followed\n\n## One improvement for next week\n",
-  },
-];
 export interface RichEditorHandle {
   focus(): void;
 }
@@ -90,6 +72,11 @@ export function RichEditor({
     setLocalPreview(next);
     onModeChange?.(next ? "preview" : "edit");
   };
+  // Tell the parent which mode the editor opened in (it may open in preview for existing text).
+  useEffect(() => {
+    onModeChange?.(preview ? "preview" : "edit");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useImperativeHandle(editorRef, () => ({
     focus() {
       setPreview(false);
@@ -103,6 +90,7 @@ export function RichEditor({
     "/api/workspace/templates",
   );
   const [linkOpen, setLinkOpen] = useState(false),
+    [manageTemplates, setManageTemplates] = useState(false),
     [search, setSearch] = useState("");
   const {
     data: trades,
@@ -210,7 +198,7 @@ export function RichEditor({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" aria-label="Note templates">
-                {[...BUILT_INS, ...(data?.templates ?? [])].map((template) => (
+                {(data?.templates ?? []).map((template) => (
                   <DropdownMenuItem
                     key={template.id}
                     onSelect={() => onChange(value + (value ? "\n\n" : "") + template.content)}
@@ -222,8 +210,26 @@ export function RichEditor({
                     {template.name}
                   </DropdownMenuItem>
                 ))}
+                {(data?.templates ?? []).length === 0 && (
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                    No templates yet. Create one below.
+                  </div>
+                )}
+                <div className="my-1 border-t" role="separator" />
+                <DropdownMenuItem onSelect={() => setManageTemplates(true)}>
+                  <Settings2
+                    aria-hidden="true"
+                    className="size-3.5 shrink-0 text-muted-foreground"
+                  />
+                  Edit templates…
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <TemplateManager
+              open={manageTemplates}
+              onOpenChange={setManageTemplates}
+              onChanged={refresh}
+            />
             <Button
               type="button"
               size="sm"

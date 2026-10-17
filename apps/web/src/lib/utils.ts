@@ -19,6 +19,17 @@ export const fmtMoney = (value: number, currency = "USD"): string => {
   return formatter.format(value);
 };
 
+const balanceFormatters = new Map<string, Intl.NumberFormat>();
+/** Money without a "+" on positive values, for balances (fmtMoney always signs P&L). */
+export const fmtBalance = (value: number, currency = "USD"): string => {
+  let formatter = balanceFormatters.get(currency);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat("en-US", { style: "currency", currency });
+    balanceFormatters.set(currency, formatter);
+  }
+  return formatter.format(value);
+};
+
 const numberFormatters = new Map<number, Intl.NumberFormat>();
 export const fmtNumber = (value: number, digits = 2): string => {
   let formatter = numberFormatters.get(digits);

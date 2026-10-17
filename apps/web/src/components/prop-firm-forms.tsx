@@ -11,6 +11,8 @@ import { useApi, postJson } from "@/lib/use-api";
 import { decodeImportFile } from "@/lib/decode-import";
 import {
   fromMinor,
+  toMinor,
+  expectedPayout,
   label,
   PROP_PROGRAMS,
   PROP_STATES,
@@ -20,6 +22,7 @@ import {
   type PropEntry,
   type PropData,
   type PropAudit,
+  type PropTemplate,
 } from "@/lib/prop-firms";
 export type PropModal =
   | { kind: "account"; account?: PropAccount; parent?: PropAccount }
@@ -41,9 +44,24 @@ export type PropModal =
       payoutId?: string;
       value: boolean;
       name: string;
+      warning?: string;
+    }
+  | { kind: "templates" }
+  | {
+      kind: "bulk";
+      op: "pass" | "fail" | "delete";
+      ids: string[];
+      eligible: number;
+      skipped: number;
     }
   | { kind: "import" };
-type Props = { modal: PropModal; data: PropData; close: () => void; refresh: () => void };
+type Props = {
+  modal: PropModal;
+  data: PropData;
+  close: () => void;
+  refresh: () => void;
+  open: (modal: PropModal) => void;
+};
 export function PropFirmModal(props: Props) {
   const { modal, close } = props;
   return (
@@ -62,6 +80,10 @@ export function PropFirmModal(props: Props) {
           <ReceiptForm {...props} modal={modal} />
         ) : modal.kind === "change" ? (
           <ChangeForm {...props} modal={modal} />
+        ) : modal.kind === "bulk" ? (
+          <BulkForm {...props} modal={modal} />
+        ) : modal.kind === "templates" ? (
+          <TemplatesForm {...props} />
         ) : modal.kind === "import" ? (
           <ImportForm {...props} />
         ) : (
@@ -87,7 +109,7 @@ function useSave(close: () => void, refresh: () => void) {
       setBusy(false);
     }
   };
-  return { busy, error, save };
+  return { busy, error, setError, save };
 }
 function Form({
   title,
@@ -96,6 +118,8 @@ function Form({
   error,
   children,
   submit,
+  submitLabel = "Save record",
+  destructive = false,
 }: {
   title: string;
   description: string;
@@ -103,6 +127,8 @@ function Form({
   error: string;
   children: ReactNode;
   submit: () => void;
+  submitLabel?: string;
+  destructive?: boolean;
 }) {
   return (
     <>
@@ -125,8 +151,8 @@ function Form({
             {error}
           </p>
         )}
-        <Button type="submit" disabled={busy}>
-          {busy ? "Saving…" : "Save record"}
+        <Button type="submit" variant={destructive ? "destructive" : "default"} disabled={busy}>
+          {busy ? "Saving…" : submitLabel}
         </Button>
       </form>
     </>
@@ -146,14 +172,15 @@ const blankAccount = (today: string, parent?: PropAccount) => ({
   renewalOn: "",
   renewalAmount: "",
   notes: "",
-  reason: "",
 });
 function AccountForm({
   modal,
   data,
   close,
   refresh,
+  open,
 }: Props & { modal: Extract<PropModal, { kind: "account" }> }) {
+  const [showTemplates, setShowTemplates] = useState(false);
   const old = modal.account;
   const [id] = useState(() => old?.id ?? crypto.randomUUID());
   const [values, set] = useState(() =>
@@ -172,14 +199,64 @@ function AccountForm({
           renewalOn: old.renewalOn ?? "",
           renewalAmount: old.renewalMinor == null ? "" : fromMinor(old.renewalMinor, old.currency),
           notes: old.notes,
-          reason: "",
         }
       : blankAccount(data.today, modal.parent),
   );
   const { data: journal } = useApi<{ accounts: { id: string; name: string }[] }>(
     "/api/accounts?summary=1",
   );
-  const { busy, error, save } = useSave(close, refresh);
+  const { busy, error, setError, save } = useSave(close, refresh);
+  const [templateId, setTemplateId] = useState(""),
+    [cost, setCost] = useState(""),
+    [count, setCount] = useState("1"),
+    [costCategory, setCostCategory] = useState("evaluation"),
+    [saveAsTemplate, setSaveAsTemplate] = useState(false);
+  const applyTemplate = (value: string) => {
+    setTemplateId(value);
+    const t = data.templates.find((x) => x.id === value);
+    if (!t) return;
+    set({
+      ...values,
+      firm: t.firm,
+      name: t.name,
+      program: t.program,
+      currency: t.currency,
+      size: t.size,
+    });
+    setCost(t.cost);
+    setCostCategory(t.category);
+  };
+  const submit = async () => {
+    if (!old && saveAsTemplate) {
+      try {
+        const existing = data.templates.find(
+          (t) => t.name.toLowerCase() === values.name.trim().toLowerCase(),
+        );
+        await postJson("/api/prop-firms", {
+          action: "template.save",
+          id: existing?.id ?? crypto.randomUUID(),
+          name: values.name,
+          firm: values.firm,
+          program: values.program,
+          currency: values.currency,
+          size: values.size,
+          cost,
+          category: costCategory,
+        });
+      } catch (e) {
+        setError((e as Error).message);
+        return;
+      }
+    }
+    await save({
+      action: "account.save",
+      id,
+      revision: old?.revision ?? 0,
+      ...values,
+      ...(!old && Number(count) > 1 ? { count } : {}),
+      ...(!old && cost.trim() ? { expense: { amount: cost.trim(), category: costCategory } } : {}),
+    });
+  };
   const input = (key: keyof typeof values, title: string, required = false) => (
     <Field label={title}>
       <Input
@@ -194,22 +271,50 @@ function AccountForm({
       />
     </Field>
   );
+  // Templates open in this same window so nothing typed above is lost.
+  if (showTemplates)
+    return (
+      <TemplatesForm
+        modal={{ kind: "templates" }}
+        data={data}
+        close={close}
+        refresh={refresh}
+        open={open}
+        onBack={() => setShowTemplates(false)}
+      />
+    );
   return (
     <Form
       title={
         old
           ? "Edit prop account"
           : modal.parent
-            ? "Track next attempt or phase"
-            : "Track a prop account"
+            ? "Add next attempt or phase"
+            : "Add a prop account"
       }
-      description="Keep each evaluation, reset attempt and funding phase as its own record. Account size is nominal capital, not money you spent."
+      description="Keep each evaluation, reset attempt and funding phase as its own record. Account size is nominal capital, not money you spent. Enter what you paid below to record the expense in the same step."
       busy={busy}
       error={error}
-      submit={() =>
-        void save({ action: "account.save", id, revision: old?.revision ?? 0, ...values })
-      }
+      submit={() => void submit()}
     >
+      {!old && (
+        <div className="space-y-2 rounded-lg border p-3">
+          <Field label="Start from a template">
+            <OptionSelect value={templateId} onValueChange={applyTemplate}>
+              <option value="">{data.templates.length ? "No template" : "No templates yet"}</option>
+              {data.templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name} · {t.firm}
+                  {t.cost ? ` · ${t.cost} ${t.currency}` : ""}
+                </option>
+              ))}
+            </OptionSelect>
+          </Field>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setShowTemplates(true)}>
+            Manage templates
+          </Button>
+        </div>
+      )}
       <div className="grid gap-3 sm:grid-cols-2">
         {input("firm", "Firm name", true)}
         {input("name", "Account / attempt name", true)}
@@ -298,6 +403,54 @@ function AccountForm({
           </OptionSelect>
         </Field>
       </div>
+      {!old && (
+        <div className="space-y-2 rounded-lg border p-3">
+          <p className="text-sm font-medium">What you paid (optional)</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field
+              label={`Amount paid${Number(count) > 1 ? " per account" : ""}${values.currency ? ` (${values.currency})` : ""}`}
+            >
+              <Input value={cost} onChange={(e) => setCost(e.target.value)} />
+            </Field>
+            <Field label="Cost type">
+              <OptionSelect value={costCategory} onValueChange={setCostCategory}>
+                {EXPENSE_CATEGORIES.map((v) => (
+                  <option key={v} value={v}>
+                    {label(v)}
+                  </option>
+                ))}
+              </OptionSelect>
+            </Field>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Saved as an expense on the opened date. Leave blank to add the account only.
+          </p>
+          <Field label="Number of accounts">
+            <Input
+              type="number"
+              min={1}
+              max={50}
+              step={1}
+              value={count}
+              onChange={(e) => setCount(e.target.value)}
+            />
+          </Field>
+          {Number(count) > 1 && (
+            <p className="text-xs text-muted-foreground">
+              Creates {count} identical accounts named “{values.name.trim() || "Name"} #1” to “
+              {values.name.trim() || "Name"} #{count}”, each with its own cost.
+            </p>
+          )}
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={saveAsTemplate}
+              onChange={(e) => setSaveAsTemplate(e.target.checked)}
+            />
+            Also save these details as a template
+          </label>
+        </div>
+      )}
       <details>
         <summary className="cursor-pointer text-sm">Renewal reminder</summary>
         <p className="my-2 text-xs text-muted-foreground">
@@ -329,7 +482,6 @@ function AccountForm({
           onChange={(e) => set({ ...values, notes: e.target.value })}
         />
       </Field>
-      {old && input("reason", "Reason for change", true)}
     </Form>
   );
 }
@@ -359,11 +511,32 @@ function EntryForm({
     parentId: old?.parentId ?? expense?.id ?? "",
     reference: old?.reference ?? "",
     notes: old?.notes ?? "",
-    reason: "",
   });
   const kind = old?.kind ?? modal.type,
     payout = kind === "payout",
     refund = kind === "refund";
+  // Most payouts are logged after the money has landed, so "received" starts ticked and the
+  // net amount follows the numbers above until it is typed over.
+  const [paid, setPaid] = useState(true),
+    [paidAmount, setPaidAmount] = useState<string | null>(null),
+    [paidOn, setPaidOn] = useState("");
+  const quick = payout && !old && paid;
+  const expectedNet = () => {
+    try {
+      const c = values.currency;
+      return fromMinor(
+        expectedPayout({
+          amountMinor: toMinor(values.amount, c),
+          splitBps: toMinor(values.splitPercent, "USD"),
+          feeMinor: toMinor(values.fee || "0", c),
+        } as PropEntry),
+        c,
+      );
+    } catch {
+      return "";
+    }
+  };
+  const receivedAmount = paidAmount ?? expectedNet();
   const { busy, error, save } = useSave(close, refresh);
   const input = (key: keyof typeof values, title: string, required = false, disabled = false) => (
     <Field label={title}>
@@ -386,20 +559,36 @@ function EntryForm({
         old
           ? `Edit ${kind}`
           : payout
-            ? "Log a payout request"
+            ? "Log a payout"
             : refund
               ? "Record an expense refund"
               : "Record prop spending"
       }
       description={
         payout
-          ? "A request is not income. Record actual bank receipts separately, including partial payments. This does not request a payout from your firm."
+          ? quick
+            ? "Logs the payout and the money you received in one step. Untick the box below if it is only requested so far. This does not request a payout from your firm."
+            : "A request is not income until money arrives. Record bank receipts afterwards, including partial payments. This does not request a payout from your firm."
           : "Record cash that actually changed hands. Include taxes and fees in the amount paid. Do not duplicate trading commissions already included elsewhere."
       }
       busy={busy}
       error={error}
+      submitLabel={payout && !old ? "Log payout" : undefined}
       submit={() =>
-        void save({ action: "entry.save", id, revision: old?.revision ?? 0, kind, ...values })
+        void save({
+          action: "entry.save",
+          id,
+          revision: old?.revision ?? 0,
+          kind,
+          ...values,
+          ...(quick
+            ? {
+                status: "approved",
+                dueOn: "",
+                received: { amount: receivedAmount, occurredOn: paidOn || values.occurredOn },
+              }
+            : {}),
+        })
       }
     >
       <div className="grid gap-3 sm:grid-cols-2">
@@ -414,7 +603,13 @@ function EntryForm({
           >
             <option value="">{payout ? "Choose a funded account" : "Shared firm expense"}</option>
             {data.accounts
-              .filter((a) => !payout || ["funded", "instant_funded", "live"].includes(a.program))
+              .filter(
+                (a) =>
+                  a.id === values.accountId ||
+                  (a.status === "active" &&
+                    !a.archived &&
+                    (!payout || ["funded", "instant_funded", "live"].includes(a.program))),
+              )
               .map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.firm} · {a.name}
@@ -458,7 +653,37 @@ function EntryForm({
             onValueChange={(occurredOn) => set({ ...values, occurredOn })}
           />
         </Field>
-        {payout && (
+        {payout && !old && (
+          <div className="col-span-full space-y-3 rounded-lg border p-3">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={paid} onChange={(e) => setPaid(e.target.checked)} />
+              Money already received (records the payment and completes this payout)
+            </label>
+            {paid && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field
+                  label={`Net amount received${values.currency ? ` (${values.currency})` : ""}`}
+                >
+                  <Input
+                    required
+                    value={receivedAmount}
+                    onChange={(e) => setPaidAmount(e.target.value)}
+                  />
+                </Field>
+                <Field label="Date received">
+                  <DatePicker
+                    label="Date payout was received"
+                    value={paidOn || values.occurredOn}
+                    min={values.occurredOn}
+                    max={data.today}
+                    onValueChange={setPaidOn}
+                  />
+                </Field>
+              </div>
+            )}
+          </div>
+        )}
+        {payout && !quick && (
           <>
             <Field label="Expected payment date (optional)">
               <DatePicker
@@ -498,7 +723,6 @@ function EntryForm({
           payout income.
         </p>
       )}
-      {old && input("reason", "Reason for change", true)}
     </Form>
   );
 }
@@ -582,33 +806,262 @@ function ChangeForm({
   close,
   refresh,
 }: Props & { modal: Extract<PropModal, { kind: "change" }> }) {
-  const [reason, setReason] = useState("");
   const { busy, error, save } = useSave(close, refresh);
+  const remove = modal.action === "account.delete";
+  const resolve = modal.action === "account.pass" || modal.action === "account.fail";
   return (
     <Form
       title={modal.name}
       description={
-        modal.action === "account.archive"
-          ? "Archiving hides the account from the active list. Its cash history remains in returns. You can restore it later."
-          : "Voided records stay in the audit trail and are excluded from cash totals. They can be restored. Voiding a payout also excludes its receipts."
+        remove
+          ? (modal.warning ?? "This permanently deletes the account and its records.")
+          : resolve
+            ? (modal.warning ?? "")
+            : modal.action === "account.archive"
+              ? "Archiving hides the account from the active list. Its cash history remains in returns. You can restore it later."
+              : "Voided records stay in the audit trail and are excluded from cash totals. They can be restored. Voiding a payout also excludes its receipts."
       }
       busy={busy}
       error={error}
+      submitLabel={
+        remove
+          ? "Delete permanently"
+          : modal.action === "account.pass"
+            ? "Mark as passed"
+            : modal.action === "account.fail"
+              ? "Mark as failed"
+              : "Save record"
+      }
+      destructive={remove}
       submit={() =>
-        void save({
-          action: modal.action,
-          id: modal.id,
-          revision: modal.revision,
-          payoutId: modal.payoutId,
-          [modal.action === "account.archive" ? "archived" : "voided"]: modal.value,
-          reason,
-        })
+        void save(
+          remove
+            ? { action: modal.action, id: modal.id, revision: modal.revision }
+            : resolve
+              ? { action: modal.action, id: modal.id, revision: modal.revision }
+              : {
+                  action: modal.action,
+                  id: modal.id,
+                  revision: modal.revision,
+                  payoutId: modal.payoutId,
+                  [modal.action === "account.archive" ? "archived" : "voided"]: modal.value,
+                },
+        )
       }
     >
-      <Field label="Reason">
-        <Input required value={reason} onChange={(e) => setReason(e.target.value)} />
-      </Field>
+      {null}
     </Form>
+  );
+}
+function BulkForm({
+  modal,
+  close,
+  refresh,
+}: Props & { modal: Extract<PropModal, { kind: "bulk" }> }) {
+  const { busy, error, save } = useSave(close, refresh);
+  const skipped = modal.skipped
+    ? ` ${modal.skipped} selected ${modal.skipped === 1 ? "account is" : "accounts are"} not eligible and will be left unchanged.`
+    : "";
+  return (
+    <Form
+      title={
+        modal.op === "delete"
+          ? `Delete ${modal.eligible} account${modal.eligible === 1 ? "" : "s"}`
+          : `Mark ${modal.eligible} account${modal.eligible === 1 ? "" : "s"} as ${modal.op === "pass" ? "passed" : "failed"}`
+      }
+      description={
+        (modal.op === "pass"
+          ? `Each selected evaluation or verification is marked passed today and gets a new linked funded account.`
+          : modal.op === "fail"
+            ? `Each selected active account is marked failed today. They stay in your cash history.`
+            : `This permanently deletes the selected accounts with their cash records, payments, attachments and edit history. It cannot be undone. To keep the history, archive instead.`) +
+        skipped
+      }
+      busy={busy}
+      error={error}
+      submitLabel={
+        modal.op === "delete"
+          ? "Delete permanently"
+          : modal.op === "pass"
+            ? "Mark as passed"
+            : "Mark as failed"
+      }
+      destructive={modal.op === "delete"}
+      submit={() =>
+        void save({ action: "account.bulk", id: crypto.randomUUID(), op: modal.op, ids: modal.ids })
+      }
+    >
+      {null}
+    </Form>
+  );
+}
+function TemplatesForm({ data, refresh, onBack }: Props & { onBack?: () => void }) {
+  const blank = {
+    id: "",
+    name: "",
+    firm: "",
+    program: "evaluation",
+    currency: "",
+    size: "",
+    cost: "",
+    category: "evaluation",
+  };
+  const [values, set] = useState(blank),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  const run = async (body: unknown, done: () => void) => {
+    setBusy(true);
+    setError("");
+    try {
+      await postJson("/api/prop-firms", body);
+      refresh();
+      done();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const edit = (t: PropTemplate) => {
+    setError("");
+    set({
+      id: t.id,
+      name: t.name,
+      firm: t.firm,
+      program: t.program,
+      currency: t.currency,
+      size: t.size,
+      cost: t.cost,
+      category: t.category,
+    });
+  };
+  const field = (key: keyof typeof values, title: string, required = false) => (
+    <Field label={title}>
+      <Input
+        value={values[key]}
+        required={required}
+        onChange={(e) =>
+          set({
+            ...values,
+            [key]: key === "currency" ? e.target.value.toUpperCase() : e.target.value,
+          })
+        }
+      />
+    </Field>
+  );
+  return (
+    <>
+      {onBack && (
+        <Button type="button" variant="ghost" size="sm" className="self-start" onClick={onBack}>
+          ← Back to account
+        </Button>
+      )}
+      <DialogHeader>
+        <DialogTitle>Account templates</DialogTitle>
+        <DialogDescription>
+          Save the account types you buy often, such as a 25K evaluation with its usual price. Pick
+          one when adding an account to fill in the details and the cost.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="space-y-2">
+        {data.templates.length === 0 && (
+          <p className="text-sm text-muted-foreground">No templates yet. Create one below.</p>
+        )}
+        {data.templates.map((t) => (
+          <div
+            key={t.id}
+            className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-2 text-sm"
+          >
+            <span>
+              <strong>{t.name}</strong> · {t.firm} · {label(t.program)}
+              {t.cost ? ` · ${t.cost} ${t.currency}` : ""}
+            </span>
+            <span className="flex gap-1">
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => edit(t)}>
+                Edit
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => {
+                  if (
+                    !window.confirm(
+                      `Delete template "${t.name}"? Existing accounts are not affected.`,
+                    )
+                  )
+                    return;
+                  void run({ action: "template.delete", id: t.id }, () => {
+                    if (values.id === t.id) set(blank);
+                  });
+                }}
+              >
+                Delete
+              </Button>
+            </span>
+          </div>
+        ))}
+      </div>
+      <form
+        className="space-y-4 border-t pt-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (busy) return;
+          void run(
+            { action: "template.save", ...values, id: values.id || crypto.randomUUID() },
+            () => set(blank),
+          );
+        }}
+      >
+        <p className="text-sm font-medium">{values.id ? "Edit template" : "New template"}</p>
+        <fieldset disabled={busy} className="grid gap-3 sm:grid-cols-2">
+          {field("name", "Template name (e.g. 25K Eval)", true)}
+          {field("firm", "Firm", true)}
+          <Field label="Program">
+            <OptionSelect
+              value={values.program}
+              onValueChange={(program) => set({ ...values, program })}
+            >
+              {PROP_PROGRAMS.map((v) => (
+                <option key={v} value={v}>
+                  {label(v)}
+                </option>
+              ))}
+            </OptionSelect>
+          </Field>
+          {field("currency", "Currency code", true)}
+          {field("size", "Account size (optional)")}
+          {field("cost", "Price (optional)")}
+          <Field label="Cost type">
+            <OptionSelect
+              value={values.category}
+              onValueChange={(category) => set({ ...values, category })}
+            >
+              {EXPENSE_CATEGORIES.map((v) => (
+                <option key={v} value={v}>
+                  {label(v)}
+                </option>
+              ))}
+            </OptionSelect>
+          </Field>
+        </fieldset>
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
+        <div className="flex gap-2">
+          <Button type="submit" disabled={busy}>
+            {busy ? "Saving…" : values.id ? "Save template" : "Add template"}
+          </Button>
+          {values.id && (
+            <Button type="button" variant="ghost" disabled={busy} onClick={() => set(blank)}>
+              Cancel edit
+            </Button>
+          )}
+        </div>
+      </form>
+    </>
   );
 }
 function Detail({ modal, data }: Props & { modal: Extract<PropModal, { kind: "detail" }> }) {
@@ -649,7 +1102,11 @@ function Detail({ modal, data }: Props & { modal: Extract<PropModal, { kind: "de
           )}
         </>
       )}
-      <Attachments type={modal.type === "account" ? "prop-account" : "prop-entry"} id={modal.id} />
+      <Attachments
+        type={modal.type === "account" ? "prop-account" : "prop-entry"}
+        id={modal.id}
+        editable
+      />
       <details>
         <summary className="cursor-pointer text-sm">Edit history · latest 100 changes</summary>
         <div className="mt-3 space-y-3">

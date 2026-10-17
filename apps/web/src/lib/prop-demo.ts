@@ -6,7 +6,7 @@ export function createPropDemo(today: string): PropData {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(today) || !Number.isFinite(anchor))
     throw new Error("Invalid demo date.");
   const day = (ago: number) => new Date(anchor - ago * 86_400_000).toISOString().slice(0, 10);
-  const data: PropData = { today, accounts: [], entries: [], receipts: [] };
+  const data: PropData = { today, accounts: [], entries: [], receipts: [], templates: [] };
   const note = "Simulated demo data. Fictional firm, fees and payouts.";
   function account(
     key: string,

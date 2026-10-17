@@ -8,6 +8,10 @@ import { MonetaryField } from "./privacy";
 import { ChevronDown, CircleHelp } from "lucide-react";
 import { HoverHint } from "./ui/tooltip";
 import { DatePicker } from "./ui/date-picker";
+import type { ExtraFilterKey, ExtraFilters } from "@/lib/extra-filters";
+import { EMOTIONAL_STATES } from "@/lib/emotions";
+import { MARKETS } from "@/lib/markets";
+type AnyFilterKey = FilterKey | ExtraFilterKey;
 const FIELD_HINTS: Record<string, string> = {
   From: "First included date. Closed trades use their closing day; open trades use their opening day.",
   To: "Last included date. Dates follow the journal time zone.",
@@ -19,6 +23,10 @@ const FIELD_HINTS: Record<string, string> = {
     "Filter by tags recorded on your trades. Separate multiple tags with commas.",
   "Required mistakes":
     "Filter by recorded trading mistakes. Separate multiple mistakes with commas.",
+  Market: "Stocks, futures, crypto and so on. Trades without a saved market are matched by ticker (BTCUSDT counts as crypto, ES or NQ as futures, anything else as stocks).",
+  "Emotional state": "Include trades where you logged this emotional state.",
+  "Trade quality · min": "Self-rated 1–10 plan adherence. Trades without a rating are excluded.",
+  "Confidence · min": "Self-rated 1–10 confidence. Trades without a rating are excluded.",
   "Review status": "Find trades you have marked reviewed, or those still awaiting review.",
   "Realized R": "Trade profit or loss expressed as a multiple of the trade's initial risk.",
   "Planned R": "The planned reward relative to the trade's initial risk.",
@@ -50,8 +58,8 @@ export function FilterFields({
   value,
   onChange,
 }: {
-  value: AnalysisFilters;
-  onChange: (v: AnalysisFilters) => void;
+  value: AnalysisFilters & ExtraFilters;
+  onChange: (v: AnalysisFilters & ExtraFilters) => void;
 }) {
   const { data: accounts } = useApi<{
     accounts: { id: string; name: string; archivedAt: string | null }[];
@@ -59,8 +67,8 @@ export function FilterFields({
   const { data: playbooks } = useApi<{ playbooks: { id: string; name: string }[] }>(
     "/api/playbooks",
   );
-  const set = (key: FilterKey, v: string) => onChange({ ...value, [key]: v });
-  const input = (key: FilterKey, label: string, type = "text") => (
+  const set = (key: AnyFilterKey, v: string) => onChange({ ...value, [key]: v });
+  const input = (key: AnyFilterKey, label: string, type = "text") => (
     <Field key={key} label={label}>
       <MonetaryField sensitive={/^(entry|exit|pnl)(Min|Max)$/.test(key)}>
         {type === "date" ? (
@@ -82,7 +90,7 @@ export function FilterFields({
       </MonetaryField>
     </Field>
   );
-  const select = (key: FilterKey, label: string, choices: [string, string][]) => (
+  const select = (key: AnyFilterKey, label: string, choices: [string, string][]) => (
     <Field key={key} label={label}>
       <span className="journal-filter-select relative block min-w-0">
         <OptionSelect
@@ -131,10 +139,25 @@ export function FilterFields({
         ])}
         {select(
           "assetClass",
-          "Asset class",
-          ["equity", "futures", "forex", "option", "crypto", "cfd", "other"].map((v) => [v, v]),
+          "Market",
+          MARKETS.map(([v, l]) => [v, l]),
         )}
       </div>
+      <fieldset className="journal-filter-psychology rounded-lg border p-3">
+        <legend className="px-1 text-xs text-muted-foreground">Psychology</legend>
+        <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 md:grid-cols-3">
+          {select(
+            "emotion",
+            "Emotional state",
+            EMOTIONAL_STATES.map((v) => [v, v]),
+          )}
+          {input("qualityMin", "Trade quality · min", "number")}
+          {input("qualityMax", "Trade quality · max", "number")}
+          <span aria-hidden="true" className="hidden md:block" />
+          {input("confidenceMin", "Confidence · min", "number")}
+          {input("confidenceMax", "Confidence · max", "number")}
+        </div>
+      </fieldset>
       <fieldset className="journal-filter-accounts rounded-lg border p-3">
         <legend className="px-1 text-xs text-muted-foreground">
           Accounts · none selected means all

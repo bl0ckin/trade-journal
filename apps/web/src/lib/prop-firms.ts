@@ -85,10 +85,22 @@ export type PropAudit = {
   reason: string;
   createdAt: string;
 };
+/** Reusable account type, e.g. "25K Eval" at a firm with its usual price. */
+export type PropTemplate = {
+  id: string;
+  name: string;
+  firm: string;
+  program: (typeof PROP_PROGRAMS)[number];
+  currency: string;
+  size: string;
+  cost: string;
+  category: string;
+};
 export type PropData = {
   accounts: PropAccount[];
   entries: PropEntry[];
   receipts: PropReceipt[];
+  templates: PropTemplate[];
   today: string;
 };
 const supportedCurrencies = new Set(Intl.supportedValuesOf("currency"));
@@ -125,7 +137,9 @@ export const fromMinor = (value: number, currency: string) =>
 export const propMoney = (value: number, currency: string) =>
   currencyFormat(currency).format(value / 10 ** currencyDigits(currency));
 export const label = (value: string) =>
-  value.replaceAll("_", " ").replace(/^./, (c) => c.toUpperCase());
+  value === "breached"
+    ? "Failed"
+    : value.replaceAll("_", " ").replace(/^./, (c) => c.toUpperCase());
 export const expectedPayout = (entry: PropEntry) =>
   Number((BigInt(entry.amountMinor) * BigInt(entry.splitBps) + 5000n) / 10000n) - entry.feeMinor;
 export const receivedPayout = (id: string, receipts: PropReceipt[]) =>

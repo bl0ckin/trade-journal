@@ -36,11 +36,14 @@ export function CalendarPnl({
   currency = "USD",
   monetary = true,
   runningPnl,
+  today,
 }: {
   calendar: CalendarMonth;
   currency?: string;
   monetary?: boolean;
   runningPnl?: Record<string, CalendarPnlPoint[]>;
+  /** YYYY-MM-DD in the journal timezone; that day gets a highlight ring. */
+  today?: string;
 }) {
   const maxAbs = Math.max(
     1,
@@ -65,13 +68,29 @@ export function CalendarPnl({
             currency={currency}
             monetary={monetary}
             runningPnl={runningPnl}
+            today={today}
           />
         ))}
       </div>
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs sm:text-sm">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-border/60 pt-3 text-xs sm:text-sm">
         <span className="text-muted-foreground">
-          {calendar.tradingDays} trading days {monetary && <>· {calendar.winningDays} green</>}
+          {calendar.tradingDays} trading day{calendar.tradingDays === 1 ? "" : "s"}{" "}
+          {monetary && <>· {calendar.winningDays} green</>}
         </span>
+        {monetary && (
+          <span className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex" aria-hidden="true">
+            Loss
+            <span
+              className="h-2 w-24 rounded-full"
+              style={{
+                background:
+                  "linear-gradient(to right, color-mix(in oklab, var(--loss) 48%, var(--card)), var(--card), color-mix(in oklab, var(--profit-fill) 48%, var(--card)))",
+                boxShadow: "inset 0 0 0 1px var(--border)",
+              }}
+            />
+            Profit
+          </span>
+        )}
         <span>
           Month:{" "}
           {monetary ? (
@@ -91,12 +110,14 @@ function CalendarWeekRow({
   currency,
   monetary,
   runningPnl,
+  today,
 }: {
   week: CalendarMonth["weeks"][number];
   maxAbs: number;
   currency: string;
   monetary: boolean;
   runningPnl?: Record<string, CalendarPnlPoint[]>;
+  today?: string;
 }) {
   const search = useSearchParams();
   const privacy = usePrivacy();
@@ -138,6 +159,7 @@ function CalendarWeekRow({
               className={cn(
                 "journal-calendar-day journal-calendar-day-link min-w-0 rounded-md border",
                 !traded && "border-transparent bg-muted/30",
+                day.date === today && "ring-2 ring-primary/70 ring-offset-1 ring-offset-card",
               )}
               data-performance={performance}
               style={
@@ -154,7 +176,9 @@ function CalendarWeekRow({
                   : undefined
               }
             >
-              <div className="text-muted-foreground">{Number(day.date.slice(8))}</div>
+              <div className={day.date === today ? "font-semibold text-primary" : "text-muted-foreground"}>
+                {Number(day.date.slice(8))}
+              </div>
               {traded && (
                 <>
                   <div className="journal-calendar-full tnum font-medium">

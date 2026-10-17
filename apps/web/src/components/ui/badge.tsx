@@ -13,6 +13,8 @@ const badgeVariants = cva(
         /** Win/loss chips: text carries the state; color reinforces. */
         profit: "border-transparent bg-profit/15 text-profit",
         loss: "border-transparent bg-loss/15 text-loss",
+        /** Open positions: a soft blue chip, readable in both themes. */
+        open: "border-transparent bg-sky-500/15 text-sky-700 dark:bg-sky-400/15 dark:text-sky-300",
       },
     },
     defaultVariants: { variant: "default" },

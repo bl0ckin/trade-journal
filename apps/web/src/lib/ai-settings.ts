@@ -13,7 +13,6 @@ export const AI_PROVIDER_NAMES: Record<AiProvider, string> = {
   openai: "OpenAI",
   compatible: "OpenAI-compatible",
 };
-
 /** Hosted providers only: a compatible server never receives an environment key. */
 export const AI_KEY_VARIABLES: Partial<Record<AiProvider, string>> = {
   anthropic: "ANTHROPIC_API_KEY",

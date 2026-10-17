@@ -11,6 +11,7 @@ import {
   type TradeMarketResult,
 } from "@/lib/market-data";
 import { providerInfo } from "@/lib/market-providers";
+import { resolveMarket } from "@/lib/markets";
 import type { MarketCsvDataset } from "@/lib/market-csv";
 import { replayFrame } from "@/lib/trade-replay";
 import { useApi } from "@/lib/use-api";
@@ -58,8 +59,20 @@ export function TradeMarketData({
     setResult(null);
     setError("");
   };
-  const load = async () => {
-    if (!available.some((item) => item.id === provider) || (info?.datasets && !dataset)) return;
+  const load = async (auto?: {
+    provider: string;
+    symbol: string;
+    resolution: Resolution;
+    dataset?: string;
+  }) => {
+    const useProvider = auto?.provider ?? provider;
+    const useSymbol = auto?.symbol ?? symbol;
+    const useResolution = auto?.resolution ?? resolution;
+    if (
+      !available.some((item) => item.id === useProvider) ||
+      (providerInfo(useProvider)?.datasets && !(auto ? "x" : dataset))
+    )
+      return;
     controller.current?.abort();
     const request = new AbortController();
     controller.current = request;
@@ -71,11 +84,11 @@ export function TradeMarketData({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          provider,
-          symbol,
-          dataset,
-          resolution,
-          basisConfirmed: confirmed,
+          provider: useProvider,
+          symbol: useSymbol,
+          dataset: auto ? (auto.dataset ?? "") : dataset,
+          resolution: useResolution,
+          basisConfirmed: auto ? false : confirmed,
         }),
         signal: request.signal,
       });
@@ -92,9 +105,50 @@ export function TradeMarketData({
       if (!request.signal.aborted) setBusy(false);
     }
   };
+
+  // Charts that load by themselves, once per trade and only when the provider is connected:
+  //  - crypto pairs quoted in USDT use Binance;
+  //  - stocks use Alpaca (IEX feed, which every Alpaca account can read).
+  // Futures are not loaded automatically: Alpaca has no futures data.
+  const autoTried = useRef(false);
+  const [autoLoaded, setAutoLoaded] = useState<{ label: string; provider: string } | null>(null);
+  useEffect(() => {
+    if (autoTried.current || !trade.closedAt || !connections) return;
+    const ticker = trade.symbol.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const stockSymbol = trade.symbol.trim().toUpperCase();
+    const isStock =
+      resolveMarket(trade.assetClass, trade.symbol) === "equity" &&
+      /^[A-Z][A-Z0-9.-]{0,20}$/.test(stockSymbol);
+    const target =
+      ticker.endsWith("USDT") && available.some((item) => item.id === "binance")
+        ? { provider: "binance", symbol: ticker, dataset: "" }
+        : isStock && available.some((item) => item.id === "alpaca")
+          ? { provider: "alpaca", symbol: stockSymbol, dataset: "iex" }
+          : null;
+    if (!target) return;
+    autoTried.current = true;
+    // Pick a candle size that keeps the number of candles reasonable for the trade's length.
+    const span = Date.parse(trade.closedAt) - Date.parse(trade.openedAt);
+    const chosen =
+      (Object.keys(RESOLUTIONS) as Resolution[]).find(
+        (key) => !(span > 0) || span / RESOLUTIONS[key] <= 300,
+      ) ?? "1d";
+    setProvider(target.provider);
+    setSymbol(target.symbol);
+    setDataset(target.dataset);
+    setResolution(chosen);
+    setAutoLoaded({
+      label: `${target.symbol} · ${chosen}`,
+      provider: providerInfo(target.provider)?.name ?? target.provider,
+    });
+    void load({ ...target, resolution: chosen });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connections, trade.closedAt, trade.symbol]);
+
   return (
-    <div className="space-y-3">
-      <Card>
+    // The chart comes first; the market data controls and estimates sit underneath it.
+    <div className="flex flex-col gap-3">
+      <Card className="order-2">
         <CardHeader>
           <CardTitle>Market data & replay</CardTitle>
         </CardHeader>
@@ -272,6 +326,12 @@ export function TradeMarketData({
               </>
             )
           )}
+          {autoLoaded && result && (
+            <p className="text-xs text-muted-foreground">
+              Loaded automatically from {autoLoaded.provider} ({autoLoaded.label}). Change the
+              symbol or candle size above and load again to see something different.
+            </p>
+          )}
           {error && (
             <p role="alert" className="text-sm text-destructive">
               {error}
@@ -280,22 +340,24 @@ export function TradeMarketData({
         </CardContent>
       </Card>
       {!result && saved?.saved && (
-        <p className="text-xs text-muted-foreground">
+        <p className="order-2 text-xs text-muted-foreground">
           Previously saved MAE/MFE estimates are shown below. Loading candles without the checkbox
           keeps those saved estimates; it does not calculate new ones.
         </p>
       )}
       {result && result.bars.length > 0 ? (
-        <HistoricalReplay
-          history={result}
-          trade={trade}
-          executions={executions}
-          privacy={privacy}
-        />
+        <div className="order-1">
+          <HistoricalReplay
+            history={result}
+            trade={trade}
+            executions={executions}
+            privacy={privacy}
+          />
+        </div>
       ) : (
         <>
           <div
-            className="grid gap-3 rounded-lg border bg-card p-3 sm:grid-cols-3"
+            className="order-3 grid gap-3 rounded-lg border bg-card p-3 sm:grid-cols-3"
             aria-label="Market data feature status"
           >
             <div>
@@ -334,12 +396,14 @@ export function TradeMarketData({
             </div>
           </div>
           {result && (
-            <p role="status" className="text-sm text-muted-foreground">
+            <p role="status" className="order-3 text-sm text-muted-foreground">
               No candles were returned for this instrument and trade period. Check the symbol,
               dataset and plan coverage.
             </p>
           )}
-          <TradeChart trade={trade} executions={executions} />
+          <div className="order-1">
+            <TradeChart trade={trade} executions={executions} />
+          </div>
         </>
       )}
     </div>
