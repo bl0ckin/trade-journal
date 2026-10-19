@@ -1,5 +1,6 @@
 "use client";
 import { AiNotice } from "@/components/ai-notice";
+import { AssistantMessage } from "@/components/ai-message";
 import { Checkbox } from "@/components/ui/checkbox";
 
 import { use, useEffect, useMemo, useRef, useState } from "react";
@@ -265,7 +266,7 @@ function TradeView({ tradeKey }: { tradeKey: string }) {
             )}
             {critique && (
               <CardContent>
-                <p className="whitespace-pre-wrap text-sm leading-relaxed">{critique}</p>
+                <AssistantMessage content={critique} />
               </CardContent>
             )}
           </Card>
@@ -303,7 +304,11 @@ function AnnotationsCard({
 }) {
   const [notes, setNotes] = useState(trade.notes ?? "");
   const noteEditor = useRef<RichEditorHandle>(null);
-  const [noteEditing, setNoteEditing] = useState(false);
+  // Notes open in the finished (preview) view when there is text, and Save now returns there.
+  const [noteMode, setNoteMode] = useState<"preview" | "edit">(
+    (trade.notes ?? "").trim() ? "preview" : "edit",
+  );
+  const noteEditing = noteMode === "edit";
   const [tags, setTags] = useState<string[]>(JSON.parse(trade.tagsJson ?? "[]") as string[]);
   const [mistakes, setMistakes] = useState<string[]>(
     JSON.parse(trade.mistakesJson ?? "[]") as string[],
@@ -333,6 +338,7 @@ function AnnotationsCard({
     save: debounced,
     status: saveStatus,
     flush,
+    dirty,
   } = useAutosave(`/api/trades/${encodeURIComponent(trade.key)}`, "PATCH", () => void onPatch({}));
 
   return (
@@ -504,7 +510,8 @@ function AnnotationsCard({
           </div>
           <RichEditor
             editorRef={noteEditor}
-            onModeChange={(next) => setNoteEditing(next === "edit")}
+            mode={noteMode}
+            onModeChange={setNoteMode}
             value={notes}
             onChange={(value) => {
               setNotes(value);
@@ -513,7 +520,15 @@ function AnnotationsCard({
           />
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span role="status">{saveStatus}</span>
-            <Button variant="ghost" size="sm" onClick={() => void flush()}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={async () => {
+                await flush();
+                // Only leave edit mode once everything is saved; a failed save keeps the text open.
+                if (!dirty()) setNoteMode("preview");
+              }}
+            >
               Save now
             </Button>
           </div>

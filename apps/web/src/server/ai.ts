@@ -38,7 +38,16 @@ const languageModel = (provider: AiProvider, apiKey: string | null, model: strin
     ? createOpenAI({ apiKey: apiKey! }).responses(model)
     : createAnthropic({ apiKey: apiKey! })(model);
 };
-export const runAi = async (prompt: string, maxOutputTokens = 1200): Promise<string> => {
+export interface AiChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+/** A single prompt, or a whole conversation (oldest first, ending with the user's turn). */
+export const runAi = async (
+  prompt: string | AiChatMessage[],
+  maxOutputTokens = 1200,
+): Promise<string> => {
   const provider = getAiProvider();
   if (!aiProviderConfigured(provider)) {
     throw new Error(
@@ -52,7 +61,7 @@ export const runAi = async (prompt: string, maxOutputTokens = 1200): Promise<str
       model: languageModel(provider, getAiKey(provider), getAiModel(provider)),
       ...(provider === "openai" ? { providerOptions: { openai: { store: false } } } : {}),
       system: SYSTEM,
-      prompt,
+      messages: typeof prompt === "string" ? [{ role: "user", content: prompt }] : prompt,
       maxOutputTokens,
     });
     if (!result.text.trim()) throw new Error("AI returned no text. Check the model or try again.");

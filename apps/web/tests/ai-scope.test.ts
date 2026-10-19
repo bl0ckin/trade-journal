@@ -41,7 +41,11 @@ const fills = (symbol: string, exit: number, date = "2026-09-15") => [
     executedAt: date + "T10:00:00Z",
   },
 ];
-const prompt = () => vi.mocked(runAi).mock.calls.at(-1)![0];
+// runAi takes a string or a message list; tests inspect the text either way.
+const prompt = (): string => {
+  const input = vi.mocked(runAi).mock.calls.at(-1)![0];
+  return typeof input === "string" ? input : input.map((m) => m.content).join("\n");
+};
 beforeEach(() => {
   vi.stubEnv("JOURNAL_PASSWORD", "");
   db.delete(trades).run();

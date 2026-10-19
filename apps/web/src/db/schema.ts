@@ -212,6 +212,22 @@ export const attachments = sqliteTable("attachments", {
   data: blob("data", { mode: "buffer" }).notNull(),
   createdAt: text("created_at").notNull(),
 });
+export const aiChats = sqliteTable("ai_chats", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+export const aiMessages = sqliteTable("ai_messages", {
+  id: text("id").primaryKey(),
+  chatId: text("chat_id")
+    .notNull()
+    .references(() => aiChats.id, { onDelete: "cascade" }),
+  role: text("role", { enum: ["user", "assistant"] }).notNull(),
+  content: text("content").notNull(),
+  scopeLabel: text("scope_label"),
+  createdAt: text("created_at").notNull(),
+});
 export const noteTemplates = sqliteTable("note_templates", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),

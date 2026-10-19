@@ -20,6 +20,7 @@ import {
   Wallet,
   Landmark,
   Menu,
+  Sparkles,
   PanelLeftClose,
   PanelLeftOpen,
   X,
@@ -43,6 +44,7 @@ const NAV = [
   { href: "/missed", label: "Missed trades", icon: BookmarkPlus },
   { href: "/playbooks", label: "Playbooks", icon: BookOpen },
   { href: "/progress", label: "Progress", icon: ListChecks },
+  { href: "/ai", label: "AI", icon: Sparkles },
   { href: "/prop-firms", label: "Prop firms", icon: Landmark },
 ] as const;
 

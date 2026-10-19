@@ -66,5 +66,7 @@ export function useAutosave(url: string, method: "PATCH" | "PUT" = "PATCH", onSa
     },
     [flush],
   );
-  return { save, status, flush };
+  /** True while edits are waiting to be sent, including ones that failed and will be retried. */
+  const dirty = useCallback(() => Object.keys(pending.current).length > 0, []);
+  return { save, status, flush, dirty };
 }

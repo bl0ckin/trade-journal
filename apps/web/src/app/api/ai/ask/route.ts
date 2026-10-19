@@ -1,28 +1,7 @@
-import {
-  byDuration,
-  byHour,
-  byMistake,
-  byPlaybook,
-  bySymbol,
-  byTag,
-  byWeekday,
-  computeMetrics,
-  type BucketStats,
-} from "@luxalgo/journal-core";
 import { bad, handler, ok } from "@/server/api";
 import { runAi } from "@/server/ai";
-import { queryTrades } from "@/server/trades-query";
-import { accountContext, readAiRequest } from "@/server/ai-scope";
-
-const bucketBlock = (title: string, buckets: BucketStats[]): string =>
-  buckets.length === 0
-    ? ""
-    : `${title}:\n${buckets
-        .map(
-          (b) =>
-            `  ${b.key}: ${b.trades} trades, net ${b.netPnl.toFixed(2)}, win ${b.winRate === null ? "n/a" : `${(b.winRate * 100).toFixed(0)}%`}`,
-        )
-        .join("\n")}\n`;
+import { readAiRequest } from "@/server/ai-scope";
+import { buildJournalContext } from "@/server/ai-context";
 
 /**
  * "Ask your journal" — natural-language questions answered from the trader's
@@ -30,24 +9,8 @@ const bucketBlock = (title: string, buckets: BucketStats[]): string =>
  */
 export const POST = handler(async (request: Request) => {
   const scope = readAiRequest(await request.json(), "question");
-  const { question, timeZone, filters } = scope;
-
-  const { trades } = queryTrades(filters);
-  if (trades.length === 0) return bad("No trades match the selected accounts and filters");
-  const m = computeMetrics(trades, { timeZone });
-
-  const context = [
-    scope.context,
-    accountContext(trades, scope),
-    `Overall: net ${m.netPnl.toFixed(2)} over ${m.closedTrades} closed trades (${m.tradingDays} days), win rate ${m.winRate === null ? "n/a" : `${(m.winRate * 100).toFixed(1)}%`}, profit factor ${m.profitFactorIsInfinite ? "inf" : (m.profitFactor?.toFixed(2) ?? "n/a")}, avg win ${m.avgWin?.toFixed(2) ?? "n/a"}, avg loss ${m.avgLoss?.toFixed(2) ?? "n/a"}, max drawdown ${m.maxDrawdown.toFixed(2)}, day win rate ${m.dayWinRate === null ? "n/a" : `${(m.dayWinRate * 100).toFixed(0)}%`}, fees ${m.fees.toFixed(2)}.`,
-    bucketBlock("By symbol (top 12)", bySymbol(trades).slice(0, 12)),
-    bucketBlock("By weekday", byWeekday(trades, timeZone)),
-    bucketBlock("By hour of open", byHour(trades, timeZone)),
-    bucketBlock("By holding time", byDuration(trades)),
-    bucketBlock("By tag", byTag(trades).slice(0, 12)),
-    bucketBlock("By mistake", byMistake(trades).slice(0, 12)),
-    bucketBlock("By playbook", byPlaybook(trades)),
-  ].join("\n");
+  const context = buildJournalContext(scope);
+  if (!context) return bad("No trades match the selected accounts and filters");
 
   const answer = await runAi(
     `Answer the trader's question using ONLY these aggregates from their journal. If the data
@@ -56,7 +19,7 @@ Cite the numbers you used. Under 200 words.
 
 ${context}
 
-Question: ${question}`,
+Question: ${scope.question}`,
   );
 
   return ok({ answer, scope: scope.scope });

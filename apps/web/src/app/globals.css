@@ -1626,3 +1626,169 @@ html:not(.dark) .journal-markdown td,
 html:not(.dark) .journal-markdown th {
   border-color: var(--border);
 }
+
+/* ---------- AI chat ----------
+   Built from the theme tokens (card, border, brand and violet glow) so it follows light, dark
+   and any accent change. Motion is decoration only and is switched off for reduced motion. */
+.ai-avatar {
+  background-image: linear-gradient(
+    135deg,
+    rgb(var(--brand-glow) / 0.95),
+    rgb(var(--violet-glow) / 0.9)
+  );
+  color: #fff;
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 0.25) inset,
+    0 6px 16px -8px rgb(var(--brand-glow) / 0.7);
+}
+.ai-user-bubble {
+  background-image: linear-gradient(
+    135deg,
+    rgb(var(--brand-glow) / 0.18),
+    rgb(var(--violet-glow) / 0.1)
+  );
+  box-shadow: inset 0 0 0 1px rgb(var(--brand-glow) / 0.22);
+}
+.ai-assistant {
+  background: color-mix(in srgb, var(--card) 86%, transparent);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.ai-stage {
+  background-image:
+    radial-gradient(520px 260px at 0% 0%, rgb(var(--brand-glow) / 0.06), transparent 70%),
+    radial-gradient(520px 260px at 100% 100%, rgb(var(--violet-glow) / 0.05), transparent 70%);
+}
+.ai-prose {
+  font-size: 0.875rem;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  color: var(--foreground);
+}
+.ai-prose > :first-child {
+  margin-top: 0;
+}
+.ai-prose > :last-child {
+  margin-bottom: 0;
+}
+.ai-prose p,
+.ai-prose ul,
+.ai-prose ol,
+.ai-prose blockquote,
+.ai-prose pre {
+  margin: 0 0 0.75em;
+}
+.ai-prose ul {
+  list-style: disc;
+  padding-left: 1.25em;
+}
+.ai-prose ol {
+  list-style: decimal;
+  padding-left: 1.25em;
+}
+.ai-prose li {
+  margin: 0.2em 0;
+}
+.ai-prose li::marker {
+  color: var(--muted-foreground);
+}
+.ai-prose h1,
+.ai-prose h2,
+.ai-prose h3,
+.ai-prose h4 {
+  margin: 1.1em 0 0.4em;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.ai-prose h1 {
+  font-size: 1.15em;
+}
+.ai-prose h2 {
+  font-size: 1.08em;
+}
+.ai-prose h3,
+.ai-prose h4 {
+  font-size: 1em;
+}
+.ai-prose strong {
+  font-weight: 600;
+}
+.ai-prose a {
+  color: var(--brand);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ai-prose code {
+  border-radius: 0.375rem;
+  background: var(--muted);
+  padding: 0.1em 0.35em;
+  font-size: 0.85em;
+}
+.ai-prose pre {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--muted);
+  padding: 0.75em;
+}
+.ai-prose pre code {
+  background: none;
+  padding: 0;
+}
+.ai-prose blockquote {
+  border-left: 3px solid rgb(var(--brand-glow) / 0.5);
+  padding-left: 0.9em;
+  color: var(--muted-foreground);
+}
+.ai-prose hr {
+  margin: 1em 0;
+  border-color: var(--border);
+}
+.ai-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+.ai-prose th,
+.ai-prose td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.4em 0.6em;
+  text-align: left;
+}
+.ai-prose th {
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+@keyframes ai-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+@keyframes ai-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.ai-dot {
+  animation: ai-dot 1.2s infinite ease-in-out;
+}
+.ai-rise {
+  animation: ai-rise 0.25s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-dot,
+  .ai-rise {
+    animation: none;
+  }
+}

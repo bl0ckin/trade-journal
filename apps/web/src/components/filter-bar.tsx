@@ -62,7 +62,7 @@ export function FilterBar({
     params = useSearchParams();
   const filters = useFilters();
   const showFilters =
-    ["/", "/reports", "/trades", "/calendar", "/journal", "/playbooks"].includes(pathname) ||
+    ["/", "/reports", "/ai", "/trades", "/calendar", "/journal", "/playbooks"].includes(pathname) ||
     pathname.startsWith("/journal/");
   const [open, setOpen] = useState(false),
     [draft, setDraft] = useState<AnalysisFilters & ExtraFilters>({});
