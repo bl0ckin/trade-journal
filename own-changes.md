@@ -23,6 +23,7 @@ Totals: 55 new files (6 of them tests), 81 files with real edits, 11 files with 
 | Primary account and balances | `components/account-balances.tsx` | `api/accounts/route.ts`, `api/accounts/[id]/route.ts`, `server/settings.ts`, `components/account-picker.tsx`, `components/account-selector.tsx`, `app/accounts/page.tsx`, `lib/utils.ts` (`fmtBalance`) |
 | Daily risk limits | `lib/risk-limits.ts`, `api/risk-limits/route.ts`, `components/risk-limit-settings.tsx`, `components/daily-limit-warning.tsx` | `server/settings.ts`, `app/settings/page.tsx`, `app/page.tsx` |
 | Broker sync | `server/auto-sync.ts`, `lib/auto-sync-schedule.ts`, `instrumentation.ts`, `api/sync/route.ts`, `components/sync-button.tsx`, `lib/sync-events.ts`, `lib/sync-scope.ts`, `lib/time-ago.ts`, `server/alpaca-fills.ts`, `tests/auto-sync.test.ts`, `tests/sync-lock.test.ts`, `tests/sync-scope.test.ts`, `tests/alpaca-fills.test.ts` | `server/sync.ts` (`syncAccountExclusive`, Alpaca fetch wrapper), `api/accounts/[id]/actions/route.ts` |
+| AI chat and history | `app/ai/page.tsx`, `components/ai-chat.tsx`, `components/ai-message.tsx`, `lib/ai-prompts.ts`, `server/ai-chats.ts`, `server/ai-context.ts`, `api/ai/chat/route.ts`, `api/ai/chats/route.ts`, `api/ai/chats/[id]/route.ts`, `api/ai/prompts/route.ts`, `tests/ai-chat.test.ts` | `db/schema.ts`, `db/bootstrap.ts`, `server/ai.ts` (`runAi` accepts a conversation), `api/ai/ask/route.ts`, `components/ask-journal.tsx`, `components/shell.tsx`, `components/filter-bar.tsx`, `app/globals.css` (`.ai-*`), `app/trades/[key]/page.tsx` |
 | Trades table | `lib/trade-search.ts`, `lib/trades-view.ts`, `components/tag-picker.tsx`, `api/tag-library/route.ts`, `tests/trade-search.test.ts` | `app/trades/page.tsx`, `api/trades/route.ts`, `api/trades/bulk/route.ts` |
 | Reports and calendar | `components/report-charts.tsx`, `report-kpis.tsx`, `report-statistics.tsx`, `report-insights.tsx`, `calendar-year.tsx`, `lib/extended-stats.ts`, `lib/calendar-year.ts`, `api/calendar/year/route.ts` | `components/report-overview.tsx`, `app/reports/page.tsx`, `app/calendar/page.tsx`, `components/calendar-pnl.tsx`, `api/stats/route.ts` |
 | Notebook, journal, attachments | `app/notebook/notebook.css`, `components/template-manager.tsx`, `components/attachment-queue.tsx`, `components/image-viewer.tsx`, `lib/note-tools.ts`, `lib/note-templates.ts` | `app/notebook/page.tsx`, `app/journal/page.tsx`, `app/journal/[date]/page.tsx`, `components/attachments.tsx`, `components/rich-editor.tsx`, `api/notes/route.ts`, `api/notes/[id]/route.ts`, `api/folders/[id]/route.ts`, `api/workspace/[resource]/route.ts` |
@@ -37,7 +38,7 @@ All paths are under `apps/web/src/` (or `apps/web/tests/`) unless they start wit
 
 **New columns** on `trades` (nullable, added at startup by guards in `db/index.ts` and also present in `BOOTSTRAP_SQL`): `trade_quality INTEGER`, `confidence INTEGER`, `emotional_state TEXT`. `emotional_state` holds a JSON list; older single-word values are still read.
 
-**No new tables.** New state lives in the existing `settings` table:
+**New tables:** `ai_chats` and `ai_messages` (AI chat history, `ON DELETE CASCADE`). Everything else lives in the existing `settings` table:
 
 | Settings key | Holds |
 | --- | --- |
@@ -45,6 +46,7 @@ All paths are under `apps/web/src/` (or `apps/web/tests/`) unless they start wit
 | `riskLimits` | Daily loss, trades per day, consecutive losses |
 | `propTemplates` | Prop firm account templates |
 | `tagLibrary`, `mistakeLibrary` | Saved tag and mistake names |
+| `aiPrompts` | Saved AI prompts |
 
 **Environment variable:** `AUTO_SYNC_INTERVAL_MINUTES` (default 15; `0` or `off` disables background sync). Documented in `.env.example` and the README.
 

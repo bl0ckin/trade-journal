@@ -20,6 +20,11 @@ Changes made in this fork, relative to LuxAlgo's Trade Journal snapshot of 2026-
 - Daily risk limits in Settings (max daily loss, max trades per day, max consecutive losses) with a warning banner on the dashboard and in Add trade as a limit gets close
 - Tag and mistake library: pick from previously used values, add new ones, rename or delete a value everywhere (`/api/tag-library`)
 
+**AI**
+
+- New **AI** page under Reports (`/ai`): a full chat with your journal, saved chat history (rename, delete, clear) and a prompt library with built-in suggestions and prompts you save yourself. Follow-up questions send the earlier messages; the journal aggregates are rebuilt from the current filters on every question, and each answer shows the scope it used. Stored in two new tables, `ai_chats` and `ai_messages`, created at startup; saved prompts live in the `settings` table (`aiPrompts`). Endpoints: `POST /api/ai/chat`, `GET/DELETE /api/ai/chats`, `GET/PATCH/DELETE /api/ai/chats/[id]`, `GET/POST/DELETE /api/ai/prompts`
+- AI answers (chat, Reports "Ask your journal", trade critique) render Markdown in a theme-aware message style with a thinking indicator and copy button. Reports keeps its quick ask and links to the full chat
+
 **Broker sync**
 
 - Sync button on the dashboard (follows the account selector)
