@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
-Changes made in this fork, relative to LuxAlgo's Trade Journal snapshot of 2026-09-30 (`trade-journal-main`). A file-level map, schema notes and merge hotspots are in [`main/own-changes.md`](own-changes.md).
+Changes made in this fork, relative to LuxAlgo's Trade Journal snapshot of 2026-09-30 (`trade-journal-main`). A file-level map, schema notes and merge hotspots are in [`own-changes.md`](own-changes.md).
 
 ### Latest updates (2026-11-03)
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { X, Zap } from "lucide-react";
 import { MonetaryField } from "@/components/privacy";
 import { Button } from "@/components/ui/button";
@@ -89,11 +89,14 @@ export function ManualTradeEntry({
       const [first, second] = current;
       if (!first || (first.quantity !== "" && !first.quantityAuto)) return current;
       const match = known?.symbols.find((item) => item.symbol.toUpperCase() === name.trim().toUpperCase());
-      const quantity = match ? String(match.lastQuantity) : "";
+      // Only replace an auto-filled quantity when the new ticker has a remembered one.
+      // Clearing it on every keystroke of an unknown ticker emptied the executions.
+      if (!match) return current;
+      const quantity = String(match.lastQuantity);
       const next = [...current];
-      next[0] = { ...first, quantity, quantityAuto: Boolean(match) };
+      next[0] = { ...first, quantity, quantityAuto: true };
       if (second && (second.quantityAuto || second.quantity === ""))
-        next[1] = { ...second, quantity, quantityAuto: Boolean(match) };
+        next[1] = { ...second, quantity, quantityAuto: true };
       return next;
     });
   const chooseSymbol = (name: string) => {
@@ -108,6 +111,9 @@ export function ManualTradeEntry({
     null,
   );
   const [pricing, setPricing] = useState<number | null>(null);
+  // Latest ticker, so a slow price reply for an old ticker is never applied to a new one.
+  const symbolRef = useRef(symbol);
+  symbolRef.current = symbol;
   useEffect(() => {
     const query = symbol.trim();
     if (!searchOpen || query.length < 1) {
@@ -135,13 +141,18 @@ export function ManualTradeEntry({
   };
   /** Fill one execution's price with the latest traded price for the symbol. */
   const fillCurrentPrice = async (index: number) => {
+    // The ticker suggestions float over the execution rows; never leave them open.
+    setSearchOpen(false);
+    setHits([]);
     setPricing(index);
     setPriceStatus(null);
+    const asked = symbol.trim().toUpperCase();
     try {
       const response = await fetch(`/api/quote?symbol=${encodeURIComponent(symbol.trim())}`);
       const body = (await response.json()) as { price?: number; provider?: string; error?: string };
       if (!response.ok || typeof body.price !== "number" || !(body.price > 0))
         throw new Error(body.error ?? "Could not get a price.");
+      if (symbolRef.current.trim().toUpperCase() !== asked) return;
       setLeg(index, { price: String(body.price) });
       setPriceStatus({ leg: index, text: `Latest ${body.provider} price filled in.` });
     } catch (error) {
@@ -237,8 +248,11 @@ export function ManualTradeEntry({
     }
   };
 
+  // The wrapper is a plain div, not a <fieldset>: Chrome collapses the .manual-executions size
+  // container to zero height inside a fieldset when the content around it re-renders (the
+  // executions "disappeared" after a second "current price" click). `inert` still blocks input while saving.
   return (
-    <fieldset disabled={busy} className="min-w-0 space-y-3">
+    <div inert={busy || undefined} aria-busy={busy} className="min-w-0 space-y-3">
       <AccountPicker value={accountId} onChange={setAccountId} kind="manual" />
       <div className="grid min-w-0 items-start gap-3 sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
       <div className="min-w-0">
@@ -258,6 +272,12 @@ export function ManualTradeEntry({
               setSearchOpen(true);
             }}
             onFocus={() => setSearchOpen(true)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" || event.key === "Enter") {
+                setSearchOpen(false);
+                setHits([]);
+              }
+            }}
             onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
             placeholder="Search AAPL, BTCUSDT, ESZ6…"
           />
@@ -399,6 +419,10 @@ export function ManualTradeEntry({
                   title="Fill in the current market price"
                   aria-label={`Use current price for execution ${index + 1}`}
                   disabled={!symbol.trim() || pricing !== null}
+                  onMouseDown={() => {
+                    setSearchOpen(false);
+                    setHits([]);
+                  }}
                   onClick={() => fillCurrentPrice(index)}
                   className="absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
                 >
@@ -465,6 +489,6 @@ export function ManualTradeEntry({
         Picking a symbol you have traded fills in the quantity you used last. The second execution copies the first one’s quantity and takes the opposite side. Leave its
         price empty to keep the position open. Dates and times use your journal timezone ({timeZone}). Each trade you add is kept on its own, so it never changes your other trades. To add to a position, open the trade and use Edit executions.
       </p>
-    </fieldset>
+    </div>
   );
 }

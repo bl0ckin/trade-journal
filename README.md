@@ -10,7 +10,7 @@ Broker sync, deep analytics, a P&L calendar, trade replay, prop firm tracking, d
 
 Trade Journal is a [LuxAlgo](https://luxalgo.com) open-source project.
 
-> This copy is a modified fork of LuxAlgo's open-source Trade Journal. What changed is listed in the [CHANGELOG](CHANGELOG.md) and mapped file by file in [docs/own-changes.md](docs/own-changes.md).
+> This copy is a modified fork of LuxAlgo's open-source Trade Journal. What changed is listed in the [CHANGELOG](CHANGELOG.md) and mapped file by file in [own-changes.md](own-changes.md).
 
 > **Credits.** Built on [LuxAlgo's Trade Journal](https://github.com/LuxAlgo/trade-journal) (MIT). Several fixes and features were adapted from [pablosaura's fork](https://github.com/saurasanchezpablo/trade-journal) (also MIT): see the CHANGELOG.
 
