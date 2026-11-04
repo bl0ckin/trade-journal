@@ -3,10 +3,11 @@ import { readExtraFilters } from "@/lib/extra-filters";
 import {
   readFilters,
   dayKeyOf,
+  realizations,
+  type RealizableTrade,
   type AnalysisFilters,
   type CalendarMonth,
   type DayStats,
-  type RoundTrip,
 } from "@luxalgo/journal-core";
 
 export function calendarScope<T extends AnalysisFilters>(filters: T, year: number, month: number) {
@@ -25,7 +26,7 @@ export const closingWeekday = (date: string) => new Date(`${date}T12:00:00Z`).ge
 export function calendarInsights(calendar: CalendarMonth) {
   const days = calendar.weeks
     .flatMap((week) => week.days)
-    .filter((day): day is DayStats => day !== null && day.trades > 0)
+    .filter((day): day is DayStats => day !== null && (day.trades > 0 || day.netPnl !== 0))
     .sort((a, b) => a.date.localeCompare(b.date));
   const green = days.filter((d) => d.netPnl > 0);
   const red = days.filter((d) => d.netPnl < 0);
@@ -99,21 +100,23 @@ export interface CalendarPnlPoint {
   cumNetPnl: number;
 }
 
-/** Match calendar accounting: attribute each closed trade's net P&L to its closing day. */
+/** Match calendar accounting: each sell's net P&L lands on the day it was sold. */
 export function calendarRunningPnl(
-  trades: readonly Pick<RoundTrip, "status" | "closedAt" | "netPnl">[],
+  trades: readonly RealizableTrade[],
   timeZone: string,
+  window?: { from: string; to: string },
 ): Record<string, CalendarPnlPoint[]> {
   const days: Record<string, CalendarPnlPoint[]> = {};
-  const closed = trades
-    .filter((trade) => trade.status !== "open" && trade.closedAt)
-    .toSorted((a, b) => Date.parse(a.closedAt!) - Date.parse(b.closedAt!));
-  for (const trade of closed) {
-    const date = dayKeyOf(trade.closedAt!, timeZone);
+  const slices = trades
+    .flatMap((trade) => realizations(trade))
+    .toSorted((a, b) => Date.parse(a.t) - Date.parse(b.t));
+  for (const slice of slices) {
+    const date = dayKeyOf(slice.t, timeZone);
+    if (window && (date < window.from || date > window.to)) continue;
     const points = (days[date] ??= []);
     points.push({
-      t: trade.closedAt!,
-      cumNetPnl: (points.at(-1)?.cumNetPnl ?? 0) + trade.netPnl,
+      t: slice.t,
+      cumNetPnl: (points.at(-1)?.cumNetPnl ?? 0) + slice.netPnl,
     });
   }
   return days;

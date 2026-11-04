@@ -76,15 +76,15 @@ export function BehaviourPatterns({ query }: { query: string }) {
       </CardHeader>
       <CardContent className="space-y-3">
         {data.patterns.map((p) => (
-          <section key={p.kind} className="space-y-2 rounded-md border p-3" aria-label={p.title}>
+          <section key={p.kind} className="space-y-3 rounded-lg border border-[var(--rpt-line)] p-4" aria-label={p.title}>
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-sm font-medium">{p.title}</h3>
+              <h3 className="text-[14px] font-medium">{p.title}</h3>
               <Badge variant={p.flagged ? "loss" : "secondary"}>
                 {p.flagged
-                  ? "COSTING YOU"
+                  ? "Costing you"
                   : p.flaggedSide.trades < 5 || p.baseline.trades < 5
-                    ? "TOO FEW TRADES"
-                    : "NO HARM FOUND"}
+                    ? "Too few trades"
+                    : "No harm found"}
               </Badge>
               {p.flagged && p.cost !== null && p.cost > 0 && currency !== null && (
                 <span className="text-xs text-muted-foreground">

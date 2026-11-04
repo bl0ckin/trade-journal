@@ -69,6 +69,8 @@ export function EChart({
     const apply = () =>
       chartRef.current?.setOption(
         {
+          // Canvas text does not inherit CSS, so hand it the page font.
+          textStyle: { fontFamily: getComputedStyle(document.body).fontFamily },
           ...option,
           animation: !motion.matches,
           animationDuration: 850,

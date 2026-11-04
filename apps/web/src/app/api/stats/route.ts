@@ -52,12 +52,7 @@ export const GET = handler(async (request: Request) => {
   const calendarYear = Number(url.searchParams.get("calYear") ?? today.slice(0, 4));
   const calendarMonthNum = Number(url.searchParams.get("calMonth") ?? today.slice(5, 7));
   const calendarPrefix = `${calendarYear}-${String(calendarMonthNum).padStart(2, "0")}`;
-  const calendarTrades = trades.filter(
-    (trade) =>
-      trade.status !== "open" &&
-      trade.closedAt &&
-      dayKeyOf(trade.closedAt, timeZone).startsWith(calendarPrefix),
-  );
+  const calendarWindow = { from: `${calendarPrefix}-01`, to: `${calendarPrefix}-31` };
   return ok({
     timeZone,
     currencies: currencyScope.monetary
@@ -98,7 +93,7 @@ export const GET = handler(async (request: Request) => {
     calendarCurrencies: currencyScope.monetary
       ? [currencyScope.currency ?? "USD"]
       : currencyScope.sourceCurrencies,
-    runningPnl: currencyScope.monetary ? calendarRunningPnl(calendarTrades, timeZone) : {},
+    runningPnl: currencyScope.monetary ? calendarRunningPnl(trades, timeZone, calendarWindow) : {},
     buckets: {
       symbol: bySymbol(trades).slice(0, 20),
       tag: byTag(trades),

@@ -63,7 +63,7 @@ export function yearScope<T extends AnalysisFilters>(filters: T, year: number) {
 /** Roll closed-trade day stats up into the 12 months of one year. */
 export function calendarYearFromDays(allDays: readonly DayLike[], year: number): CalendarYear {
   const prefix = `${year}-`;
-  const days = allDays.filter((day) => day.date.startsWith(prefix) && day.trades > 0);
+  const days = allDays.filter((day) => day.date.startsWith(prefix) && (day.trades > 0 || day.netPnl !== 0));
   let running = 0;
   const months: YearMonth[] = Array.from({ length: 12 }, (_, index) => {
     const month = index + 1;
@@ -91,14 +91,14 @@ export function calendarYearFromDays(allDays: readonly DayLike[], year: number):
       cumulative: running,
     };
   });
-  const active = months.filter((m) => m.trades > 0);
+  const active = months.filter((m) => m.trades > 0 || m.netPnl !== 0);
   const netPnl = active.reduce((sum, m) => sum + m.netPnl, 0);
   const trades = active.reduce((sum, m) => sum + m.trades, 0);
   const wins = active.reduce((sum, m) => sum + m.wins, 0);
   let run = 0;
   let longestGreenRun = 0;
   for (const m of months) {
-    run = m.trades > 0 && m.netPnl > 0 ? run + 1 : 0;
+    run = (m.trades > 0 || m.netPnl !== 0) && m.netPnl > 0 ? run + 1 : 0;
     longestGreenRun = Math.max(longestGreenRun, run);
   }
   const dayExtreme = (better: (a: number, b: number) => boolean) =>

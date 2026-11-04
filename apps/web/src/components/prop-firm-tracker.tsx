@@ -1,6 +1,13 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDownLeft, Landmark, Plus, Download, Upload } from "lucide-react";
+import { ArrowDownLeft, Landmark, Plus, Download, SlidersHorizontal, Upload } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog";
 import { FilterBar } from "./filter-bar";
 import { Field } from "./filter-fields";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
@@ -87,6 +94,7 @@ export function PropFirmTracker() {
   const [showBreakdowns, setShowBreakdowns] = useState(false);
   const data = savedData;
   const privacy = usePrivacy();
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [tab, setTab] = useState("overview"),
     [firm, setFirm] = useState(""),
     [accountId, setAccountId] = useState(""),
@@ -307,6 +315,7 @@ export function PropFirmTracker() {
       month,
       ...cashSummary(summaryCash.filter((row) => row.date.startsWith(month))),
     }));
+  const activeFilters = [firm, accountId, currency, from, to].filter(Boolean).length;
   const rowCount =
     tab === "accounts"
       ? listedAccounts.length
@@ -379,7 +388,6 @@ export function PropFirmTracker() {
               <Plus className="h-4 w-4" />
               Add account
             </Button>
-
             <Button
               size="sm"
               disabled={!data || readOnly}
@@ -394,9 +402,10 @@ export function PropFirmTracker() {
       <div className="space-y-5 p-4 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold">Spending & payouts</h2>
+            <h2 className="text-lg font-semibold">Your prop firm accounts and money</h2>
             <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-              See what you paid, what came back, and your net result.
+              Track each challenge or funded account, what you paid for it, and what the firm has paid
+              you back.
               {data && selectedCurrency && !privacy && summary.spent > 0 ? (
                 <>
                   {" "}
@@ -412,17 +421,31 @@ export function PropFirmTracker() {
           <div className="flex flex-wrap gap-2">
             <Button
               size="sm"
-              variant="outline"
-              disabled={!data || readOnly}
-              onClick={() => setModal({ kind: "templates" })}
+              variant={activeFilters ? "secondary" : "outline"}
+              disabled={!data}
+              onClick={() => setFiltersOpen(true)}
             >
-              Templates
+              <SlidersHorizontal className="h-4 w-4" />
+              Filters
+              {activeFilters > 0 && (
+                <span className="rounded-full bg-primary px-1.5 text-[10px] text-primary-foreground">
+                  {activeFilters}
+                </span>
+              )}
             </Button>
             <details className="relative">
               <summary className="cursor-pointer rounded-md border px-3 py-2 text-xs font-medium">
-                Data tools
+                More ▾
               </summary>
-              <div className="absolute right-0 z-20 mt-2 flex w-48 flex-col gap-1 rounded-lg border bg-card p-2 shadow-lg">
+              <div className="absolute right-0 z-20 mt-2 flex w-52 flex-col gap-1 rounded-lg border bg-card p-2 shadow-lg">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!data || readOnly}
+                  onClick={() => setModal({ kind: "templates" })}
+                >
+                  Fee & rule templates
+                </Button>
                 <Button
                   size="sm"
                   variant="outline"
@@ -499,16 +522,15 @@ export function PropFirmTracker() {
                 </CardContent>
               </Card>
             )}
-            <details className="rounded-xl border bg-card">
-              <summary className="cursor-pointer px-4 py-3 text-sm">
-                <span className="font-medium">Filters</span>
-                <span className="ml-3 text-xs text-muted-foreground">
-                  {firm || "All firms"} · {accountId ? name(accountId) : "All accounts"} ·{" "}
-                  {from || to ? `${from || "Start"} to ${to || "Today"}` : "All dates"}
-                  {selectedCurrency ? ` · ${selectedCurrency}` : " · Choose currency"}
-                </span>
-              </summary>
-              <div className="grid gap-3 border-t p-4 sm:grid-cols-2 xl:grid-cols-5">
+            <Dialog open={filtersOpen} onOpenChange={setFiltersOpen}>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>Filters</DialogTitle>
+                  <DialogDescription>
+                    Choose which firm, account, currency and dates the page shows.
+                  </DialogDescription>
+                </DialogHeader>
+              <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Firm">
                   <OptionSelect
                     value={firm}
@@ -567,7 +589,7 @@ export function PropFirmTracker() {
                     onValueChange={setTo}
                   />
                 </Field>
-                <div className="flex flex-wrap items-center justify-between gap-2 sm:col-span-2 xl:col-span-5">
+                <div className="flex flex-wrap items-center justify-between gap-2 sm:col-span-2">
                   <p className="text-xs text-muted-foreground">
                     Dates apply to cash received or paid. Account history and pending requests cover
                     all dates.
@@ -588,7 +610,31 @@ export function PropFirmTracker() {
                   </Button>
                 </div>
               </div>
-            </details>
+                <div className="flex justify-end">
+                  <Button size="sm" onClick={() => setFiltersOpen(false)}>
+                    Done
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+            {activeFilters > 0 && (
+              <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                <span>Showing</span>
+                <strong className="font-medium text-foreground">
+                  {[
+                    firm,
+                    accountId ? name(accountId) : "",
+                    selectedCurrency,
+                    from || to ? `${from || "start"} to ${to || "today"}` : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </strong>
+                <button type="button" className="underline" onClick={() => setFiltersOpen(true)}>
+                  Edit
+                </button>
+              </p>
+            )}
             {from && to && from > to && (
               <p role="alert" className="text-sm text-destructive">
                 The start date must be on or before the end date.
@@ -612,7 +658,38 @@ export function PropFirmTracker() {
                 </CardContent>
               </Card>
             )}
+            {!privacy && (
+              <PropAttention
+                items={attention}
+                onAction={(action) => {
+                  if (action === "payouts") setTab("payouts");
+                  else {
+                    setTab("overview");
+                    setShowBreakdowns(true);
+                  }
+                }}
+              />
+            )}
             <PropCashSummary summary={summary} currency={selectedCurrency} privacy={privacy} />
+            {data.entries.length < 3 && (
+              <ol className="grid gap-2 text-sm sm:grid-cols-3">
+                {[
+                  ["1", "Add an account", "The challenge or funded account you bought."],
+                  ["2", "Add expenses", "Log fees, resets and subscriptions as you pay them."],
+                  ["3", "Log payouts", "Record requests and the cash you actually receive."],
+                ].map(([n, title, text]) => (
+                  <li key={n} className="flex gap-3 rounded-xl border bg-card p-3">
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                      {n}
+                    </span>
+                    <span>
+                      <span className="block font-medium">{title}</span>
+                      <span className="text-xs text-muted-foreground">{text}</span>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            )}
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed px-4 py-3">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
                 <span className="text-muted-foreground">Awaiting payout</span>
@@ -626,18 +703,6 @@ export function PropFirmTracker() {
                 View payout requests →
               </Button>
             </div>
-            {!privacy && (
-              <PropAttention
-                items={attention}
-                onAction={(action) => {
-                  if (action === "payouts") setTab("payouts");
-                  else {
-                    setTab("overview");
-                    setShowBreakdowns(true);
-                  }
-                }}
-              />
-            )}
             {accountRows.length > 0 && <PropPipeline pipeline={pipeline} />}
             <div
               role="tablist"
@@ -670,6 +735,15 @@ export function PropFirmTracker() {
                 </Button>
               ))}
             </div>
+            <p className="-mt-2 text-xs text-muted-foreground">
+              {tab === "overview"
+                ? "The big picture: cash trend, how each firm is paying off, and payouts waiting."
+                : tab === "accounts"
+                  ? "One card per account with its stage, spend and return. Tick cards to mark several passed or failed."
+                  : tab === "payouts"
+                    ? "Payout requests and what has actually arrived."
+                    : "Every fee, refund and payout as a line item you can open, edit or void."}
+            </p>
             {tab === "overview" ? (
               <div className="space-y-4">
                 <PropCashComparison months={months} currency={selectedCurrency} privacy={privacy} />

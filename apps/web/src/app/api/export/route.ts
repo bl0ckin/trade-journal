@@ -20,6 +20,8 @@ import {
   importSources,
   importSourceAliases,
   importBatches,
+  aiChats,
+  aiMessages,
 } from "@/db";
 import { queryTrades, readTradeFilters } from "@/server/trades-query";
 import { buildTradeCsv } from "@/server/trade-csv";
@@ -28,9 +30,40 @@ import {
   getMultipliers,
   getTimeZone,
   getImportTimeZone,
+  getSetting,
 } from "@/server/settings";
 import { handler, ok } from "@/server/api";
 import { attachmentExportRecord, EXPORT_ATTACHMENTS_NOTE } from "@/lib/export-format";
+
+const parseNames = (json: string | null): string[] => {
+  try {
+    const value = JSON.parse(json ?? "[]") as unknown;
+    return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+};
+
+const parseList = (json: string | null): unknown[] => {
+  try {
+    const value = JSON.parse(json ?? "[]") as unknown;
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+};
+
+/** Plain settings carried as saved text. API keys and their ciphertext are never in this list. */
+const PLAIN_SETTINGS = [
+  "riskLimits",
+  "currencyConversion",
+  "primaryAccountId",
+  "aiProvider",
+  "aiModel",
+  "openaiModel",
+  "compatibleModel",
+  "compatibleBaseUrl",
+] as const;
 
 /**
  * Full data export: your journal is yours. Credentials are deliberately
@@ -64,6 +97,8 @@ export const GET = handler(async (request: Request) => {
     importSourceAliases: db.select().from(importSourceAliases).all(),
     importBatches: db.select().from(importBatches).all(),
     trades: db.select().from(trades).all(),
+    aiChats: db.select().from(aiChats).all(),
+    aiMessages: db.select().from(aiMessages).all(),
     journalDays: db.select().from(journalDays).all(),
     notes: db.select().from(notes).all(),
     folders: db.select().from(folders).all(),
@@ -82,6 +117,18 @@ export const GET = handler(async (request: Request) => {
       timeZone: getTimeZone(),
       importTimeZone: getImportTimeZone(),
       multipliers: getMultipliers(),
+      // The saved tag and mistake pick-lists (the values on each trade are in `trades`).
+      tagLibrary: parseNames(getSetting("tagLibrary")),
+      mistakeLibrary: parseNames(getSetting("mistakeLibrary")),
+      // AI page saved prompts and prop firm templates (no keys).
+      aiPrompts: parseList(getSetting("aiPrompts")),
+      propTemplates: parseList(getSetting("propTemplates")),
+      other: Object.fromEntries(
+        PLAIN_SETTINGS.flatMap((name) => {
+          const value = getSetting(name);
+          return value === null ? [] : [[name, value]];
+        }),
+      ),
     },
     // Metadata only: attachment binaries stay in the data directory.
     attachments: db

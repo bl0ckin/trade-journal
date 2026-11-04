@@ -35,11 +35,60 @@ export const equityCurve = (trades: RoundTrip[]): EquityPoint[] => {
   });
 };
 
-/** Per-day realized stats, keyed "YYYY-MM-DD" in the given timezone. */
+export interface Realization {
+  /** ISO timestamp of the sell that realized this slice of P&L. */
+  t: string;
+  netPnl: number;
+  grossPnl: number;
+  fees: number;
+}
+
+/**
+ * Split a closed trade's P&L by the fill that sold it, so each slice lands on the
+ * day of that sale. Fees are spread across exits pro-rata by quantity (the same
+ * rule the intraday curve uses), so the slices always add up to the trade's totals.
+ * Falls back to one slice at the close time when exit times are unknown.
+ */
+export type RealizableTrade = Pick<RoundTrip, "status" | "netPnl"> &
+  Partial<Pick<RoundTrip, "closedAt" | "grossPnl" | "fees" | "exits">>;
+
+export const realizations = (trade: RealizableTrade): Realization[] => {
+  const closedAt = trade.closedAt;
+  if (trade.status === "open" || !closedAt) return [];
+  const whole: Realization[] = [
+    { t: closedAt, netPnl: trade.netPnl, grossPnl: trade.grossPnl ?? trade.netPnl, fees: trade.fees ?? 0 },
+  ];
+  const exits = trade.exits ?? [];
+  if (!exits.length || exits.some((exit) => !exit.executedAt)) return whole;
+  const totalQty = exits.reduce((total, exit) => total + exit.quantity, 0);
+  if (!(totalQty > 0)) return whole;
+  // Merge fills that happened at the same instant so a single sell is one slice.
+  const slices = new Map<string, Realization>();
+  for (const exit of exits) {
+    const fees = (trade.fees ?? 0) * (exit.quantity / totalQty);
+    const slice = slices.get(exit.executedAt!) ?? {
+      t: exit.executedAt!,
+      netPnl: 0,
+      grossPnl: 0,
+      fees: 0,
+    };
+    slice.grossPnl += exit.grossPnl;
+    slice.fees += fees;
+    slice.netPnl += exit.grossPnl - fees;
+    slices.set(exit.executedAt!, slice);
+  }
+  return [...slices.values()].sort((a, b) => Date.parse(a.t) - Date.parse(b.t));
+};
+
+/**
+ * Per-day realized stats, keyed "YYYY-MM-DD" in the given timezone.
+ * P&L lands on the day each part of a trade was SOLD. A position bought Monday and
+ * sold half on Tuesday and half on Wednesday books half its P&L on each day. The
+ * trade itself (count, win/loss, volume) is counted on the day it closed.
+ */
 export const dailyStats = (trades: RoundTrip[], timeZone = "UTC"): DayStats[] => {
   const days = new Map<string, DayStats>();
-  for (const trade of closedByCloseTime(trades)) {
-    const date = dayKeyOf(trade.closedAt!, timeZone);
+  const dayOf = (date: string): DayStats => {
     let day = days.get(date);
     if (!day) {
       day = {
@@ -55,14 +104,21 @@ export const dailyStats = (trades: RoundTrip[], timeZone = "UTC"): DayStats[] =>
       };
       days.set(date, day);
     }
-    day.netPnl += trade.netPnl;
-    day.grossPnl += trade.grossPnl;
-    day.fees += trade.fees;
-    day.trades += 1;
-    day.volume += trade.quantity;
-    if (trade.status === "win") day.wins += 1;
-    else if (trade.status === "loss") day.losses += 1;
-    else day.breakevens += 1;
+    return day;
+  };
+  for (const trade of closedByCloseTime(trades)) {
+    for (const slice of realizations(trade)) {
+      const day = dayOf(dayKeyOf(slice.t, timeZone));
+      day.netPnl += slice.netPnl;
+      day.grossPnl += slice.grossPnl;
+      day.fees += slice.fees;
+    }
+    const closeDay = dayOf(dayKeyOf(trade.closedAt!, timeZone));
+    closeDay.trades += 1;
+    closeDay.volume += trade.quantity;
+    if (trade.status === "win") closeDay.wins += 1;
+    else if (trade.status === "loss") closeDay.losses += 1;
+    else closeDay.breakevens += 1;
   }
   return [...days.values()].sort((a, b) => a.date.localeCompare(b.date));
 };

@@ -1,5 +1,5 @@
 import { gte, or } from "drizzle-orm";
-import { dayKeyOf } from "@luxalgo/journal-core";
+import { dayKeyOf, realizations } from "@luxalgo/journal-core";
 import { accounts, db, trades } from "@/db";
 import { bad, handler, ok } from "@/server/api";
 import { getRiskLimits, getTimeZone, setSetting } from "@/server/settings";
@@ -37,9 +37,11 @@ export const GET = handler(async (request: Request) => {
 
   const statuses = accountRows.map((account) => {
     const own = recent.filter((trade) => trade.accountId === account.id);
+    // P&L counts on the day it was sold, so a scale-out that finishes tomorrow still counts today.
     const realizedPnl = own
-      .filter((trade) => trade.closedAt && dayKeyOf(trade.closedAt, timeZone) === today)
-      .reduce((sum, trade) => sum + trade.netPnl, 0);
+      .flatMap((trade) => realizations(rowToTrade(trade)))
+      .filter((slice) => dayKeyOf(slice.t, timeZone) === today)
+      .reduce((sum, slice) => sum + slice.netPnl, 0);
     // Current losing streak among today's closed trades, newest first.
     let consecutiveLosses = 0;
     const closedToday = own

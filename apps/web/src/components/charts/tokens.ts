@@ -26,7 +26,7 @@ export const readVizTokens = (): VizTokens => {
     inkMuted: v("--ink-muted", "#898781"),
     gridline: v("--gridline", "#2c2c2a"),
     baseline: v("--baseline", "#30303a"),
-    brand: v("--brand", "#1197e2"),
+    brand: v("--chart-accent", v("--brand", "#1197e2")),
     profit: v("--profit", "#2b9a6b"),
     profitFill: v("--profit-fill", "#2b9a6b"),
     loss: v("--loss", "#d4565e"),

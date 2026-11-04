@@ -206,10 +206,16 @@ function AccountForm({
     "/api/accounts?summary=1",
   );
   const { busy, error, setError, save } = useSave(close, refresh);
+  // When editing, the price paid is the account's first recorded expense.
+  const paidEntry = old
+    ? data.entries
+        .filter((e) => e.accountId === old.id && e.kind === "expense" && !e.voided)
+        .sort((a, b) => a.occurredOn.localeCompare(b.occurredOn) || a.createdAt.localeCompare(b.createdAt))[0]
+    : undefined;
   const [templateId, setTemplateId] = useState(""),
-    [cost, setCost] = useState(""),
+    [cost, setCost] = useState(() => (paidEntry ? fromMinor(paidEntry.amountMinor, paidEntry.currency) : "")),
     [count, setCount] = useState("1"),
-    [costCategory, setCostCategory] = useState("evaluation"),
+    [costCategory, setCostCategory] = useState(() => paidEntry?.category ?? "evaluation"),
     [saveAsTemplate, setSaveAsTemplate] = useState(false);
   const applyTemplate = (value: string) => {
     setTemplateId(value);
@@ -255,6 +261,14 @@ function AccountForm({
       ...values,
       ...(!old && Number(count) > 1 ? { count } : {}),
       ...(!old && cost.trim() ? { expense: { amount: cost.trim(), category: costCategory } } : {}),
+      // Editing only sends the price when it actually changed, so unchanged saves stay quiet.
+      ...(old &&
+      cost.trim() &&
+      (!paidEntry ||
+        cost.trim() !== fromMinor(paidEntry.amountMinor, paidEntry.currency) ||
+        costCategory !== paidEntry.category)
+        ? { expense: { amount: cost.trim(), category: costCategory } }
+        : {}),
     });
   };
   const input = (key: keyof typeof values, title: string, required = false) => (
@@ -270,6 +284,13 @@ function AccountForm({
         }
       />
     </Field>
+  );
+  // Rarely used fields stay tucked away, but open by themselves when they already hold a value.
+  const [moreOpen] = useState(() =>
+    Boolean(
+      modal.parent ||
+        (old && (old.parentId || old.journalAccountId || old.renewalOn || old.notes)),
+    ),
   );
   // Templates open in this same window so nothing typed above is lost.
   if (showTemplates)
@@ -292,120 +313,98 @@ function AccountForm({
             ? "Add next attempt or phase"
             : "Add a prop account"
       }
-      description="Keep each evaluation, reset attempt and funding phase as its own record. Account size is nominal capital, not money you spent. Enter what you paid below to record the expense in the same step."
+      description="One record per evaluation, reset or funded phase."
       busy={busy}
       error={error}
       submit={() => void submit()}
     >
       {!old && (
-        <div className="space-y-2 rounded-lg border p-3">
-          <Field label="Start from a template">
-            <OptionSelect value={templateId} onValueChange={applyTemplate}>
-              <option value="">{data.templates.length ? "No template" : "No templates yet"}</option>
-              {data.templates.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} · {t.firm}
-                  {t.cost ? ` · ${t.cost} ${t.currency}` : ""}
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="min-w-48 flex-1">
+            <Field label="Start from a template (optional)">
+              <OptionSelect value={templateId} onValueChange={applyTemplate}>
+                <option value="">
+                  {data.templates.length ? "No template" : "No templates yet"}
                 </option>
-              ))}
-            </OptionSelect>
-          </Field>
+                {data.templates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} · {t.firm}
+                    {t.cost ? ` · ${t.cost} ${t.currency}` : ""}
+                  </option>
+                ))}
+              </OptionSelect>
+            </Field>
+          </div>
           <Button type="button" variant="ghost" size="sm" onClick={() => setShowTemplates(true)}>
             Manage templates
           </Button>
         </div>
       )}
-      <div className="grid gap-3 sm:grid-cols-2">
-        {input("firm", "Firm name", true)}
-        {input("name", "Account / attempt name", true)}
-        <Field label="Program">
-          <OptionSelect
-            value={values.program}
-            onValueChange={(program) => set({ ...values, program })}
-          >
-            {PROP_PROGRAMS.map((v) => (
-              <option key={v} value={v}>
-                {label(v)}
-              </option>
-            ))}
-          </OptionSelect>
-        </Field>
-        <Field label="Status">
-          <OptionSelect
-            value={values.status}
-            onValueChange={(status) =>
-              set({
-                ...values,
-                status,
-                closedOn: status === "active" ? "" : values.closedOn || data.today,
-                renewalOn: status === "active" ? values.renewalOn : "",
-              })
-            }
-          >
-            {PROP_STATES.map((v) => (
-              <option key={v} value={v}>
-                {label(v)}
-              </option>
-            ))}
-          </OptionSelect>
-        </Field>
-        {input("currency", "Currency code", true)}
-        {input("size", "Nominal account size (optional)")}
-        <Field label="Opened on">
-          <DatePicker
-            label="Prop account opening date"
-            value={values.openedOn}
-            max={data.today}
-            onValueChange={(openedOn) => set({ ...values, openedOn })}
-          />
-        </Field>
-        {values.status !== "active" && (
-          <Field label="Resolved on">
-            <DatePicker
-              label="Prop account closing date"
-              value={values.closedOn}
-              max={data.today}
-              onValueChange={(closedOn) => set({ ...values, closedOn })}
-            />
-          </Field>
-        )}
-        <Field label="Previous attempt / phase">
-          <OptionSelect
-            value={values.parentId}
-            onValueChange={(parentId) => set({ ...values, parentId })}
-          >
-            <option value="">None</option>
-            {data.accounts
-              .filter(
-                (a) =>
-                  a.id !== id &&
-                  a.firm.toLowerCase() === values.firm.trim().toLowerCase() &&
-                  a.currency === values.currency,
-              )
-              .map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
+      <FormSection title="Account">
+        <div className="grid gap-3 sm:grid-cols-2">
+          {input("firm", "Firm", true)}
+          {input("name", "Account name", true)}
+          <Field label="Program">
+            <OptionSelect
+              value={values.program}
+              onValueChange={(program) => set({ ...values, program })}
+            >
+              {PROP_PROGRAMS.map((v) => (
+                <option key={v} value={v}>
+                  {label(v)}
                 </option>
               ))}
-          </OptionSelect>
-        </Field>
-        <Field label="Link journal account (optional)">
-          <OptionSelect
-            value={values.journalAccountId}
-            onValueChange={(journalAccountId) => set({ ...values, journalAccountId })}
-          >
-            <option value="">No journal link</option>
-            {journal?.accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </OptionSelect>
-        </Field>
-      </div>
-      {!old && (
-        <div className="space-y-2 rounded-lg border p-3">
-          <p className="text-sm font-medium">What you paid (optional)</p>
+            </OptionSelect>
+          </Field>
+          <Field label="Status">
+            <OptionSelect
+              value={values.status}
+              onValueChange={(status) =>
+                set({
+                  ...values,
+                  status,
+                  closedOn: status === "active" ? "" : values.closedOn || data.today,
+                  renewalOn: status === "active" ? values.renewalOn : "",
+                })
+              }
+            >
+              {PROP_STATES.map((v) => (
+                <option key={v} value={v}>
+                  {label(v)}
+                </option>
+              ))}
+            </OptionSelect>
+          </Field>
+          {input("currency", "Currency (e.g. USD)", true)}
+          {input("size", "Account size (optional)")}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Account size is the nominal capital, not money you spent.
+        </p>
+      </FormSection>
+      <FormSection title="Dates">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Opened on">
+            <DatePicker
+              label="Prop account opening date"
+              value={values.openedOn}
+              max={data.today}
+              onValueChange={(openedOn) => set({ ...values, openedOn })}
+            />
+          </Field>
+          {values.status !== "active" && (
+            <Field label="Resolved on">
+              <DatePicker
+                label="Prop account closing date"
+                value={values.closedOn}
+                max={data.today}
+                onValueChange={(closedOn) => set({ ...values, closedOn })}
+              />
+            </Field>
+          )}
+        </div>
+      </FormSection>
+      <FormSection title={old ? "What you paid" : "What you paid (optional)"}>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field
               label={`Amount paid${Number(count) > 1 ? " per account" : ""}${values.currency ? ` (${values.currency})` : ""}`}
@@ -423,66 +422,121 @@ function AccountForm({
             </Field>
           </div>
           <p className="text-xs text-muted-foreground">
-            Saved as an expense on the opened date. Leave blank to add the account only.
+            {old
+              ? paidEntry
+                ? "Changing this updates the account's first expense. Other fees, resets and refunds are in Transactions."
+                : "No expense is recorded for this account yet. Enter an amount to add one."
+              : "Saved as an expense on the opened date. Leave blank to add the account only."}
           </p>
-          <Field label="Number of accounts">
-            <Input
-              type="number"
-              min={1}
-              max={50}
-              step={1}
-              value={count}
-              onChange={(e) => setCount(e.target.value)}
-            />
-          </Field>
-          {Number(count) > 1 && (
+      </FormSection>
+      <details className="rounded-lg border" open={moreOpen}>
+        <summary className="cursor-pointer px-3 py-2 text-sm font-medium">More options</summary>
+        <div className="space-y-4 border-t p-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Previous attempt / phase">
+              <OptionSelect
+                value={values.parentId}
+                onValueChange={(parentId) => set({ ...values, parentId })}
+              >
+                <option value="">None</option>
+                {data.accounts
+                  .filter(
+                    (a) =>
+                      a.id !== id &&
+                      a.firm.toLowerCase() === values.firm.trim().toLowerCase() &&
+                      a.currency === values.currency,
+                  )
+                  .map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+              </OptionSelect>
+            </Field>
+            <Field label="Link journal account">
+              <OptionSelect
+                value={values.journalAccountId}
+                onValueChange={(journalAccountId) => set({ ...values, journalAccountId })}
+              >
+                <option value="">No journal link</option>
+                {journal?.accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </OptionSelect>
+            </Field>
+            <Field label="Next renewal">
+              <DatePicker
+                label="Next renewal date"
+                value={values.renewalOn}
+                onValueChange={(renewalOn) => set({ ...values, renewalOn })}
+              />
+            </Field>
+            {input("renewalAmount", "Expected renewal amount")}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Renewal is a reminder only. Record an expense when you are charged; nothing is added
+            automatically.{" "}
+            {(values.renewalOn || values.renewalAmount) && (
+              <button
+                type="button"
+                className="underline"
+                onClick={() => set({ ...values, renewalOn: "", renewalAmount: "" })}
+              >
+                Clear reminder
+              </button>
+            )}
+          </p>
+          {!old && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Number of accounts">
+                <Input
+                  type="number"
+                  min={1}
+                  max={50}
+                  step={1}
+                  value={count}
+                  onChange={(e) => setCount(e.target.value)}
+                />
+              </Field>
+              <label className="flex items-center gap-2 self-end pb-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={saveAsTemplate}
+                  onChange={(e) => setSaveAsTemplate(e.target.checked)}
+                />
+                Save these details as a template
+              </label>
+            </div>
+          )}
+          {!old && Number(count) > 1 && (
             <p className="text-xs text-muted-foreground">
               Creates {count} identical accounts named “{values.name.trim() || "Name"} #1” to “
               {values.name.trim() || "Name"} #{count}”, each with its own cost.
             </p>
           )}
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={saveAsTemplate}
-              onChange={(e) => setSaveAsTemplate(e.target.checked)}
-            />
-            Also save these details as a template
-          </label>
-        </div>
-      )}
-      <details>
-        <summary className="cursor-pointer text-sm">Renewal reminder</summary>
-        <p className="my-2 text-xs text-muted-foreground">
-          A reminder only. Record an expense when charged; nothing is charged or added
-          automatically.
-        </p>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Next renewal">
-            <DatePicker
-              label="Next renewal date"
-              value={values.renewalOn}
-              onValueChange={(renewalOn) => set({ ...values, renewalOn })}
+          <Field label="Notes / rules / breach reason">
+            <textarea
+              className={`${fieldClass} h-20 py-2`}
+              value={values.notes}
+              onChange={(e) => set({ ...values, notes: e.target.value })}
             />
           </Field>
-          {input("renewalAmount", "Expected renewal amount")}
         </div>
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={() => set({ ...values, renewalOn: "", renewalAmount: "" })}
-        >
-          Clear reminder
-        </Button>
       </details>
-      <Field label="Notes / rules / breach reason">
-        <textarea
-          className={`${fieldClass} h-24 py-2`}
-          value={values.notes}
-          onChange={(e) => set({ ...values, notes: e.target.value })}
-        />
-      </Field>
     </Form>
+  );
+}
+/** A titled group of related fields inside a form. */
+function FormSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="space-y-3">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {title}
+      </h4>
+      {children}
+    </section>
   );
 }
 function EntryForm({

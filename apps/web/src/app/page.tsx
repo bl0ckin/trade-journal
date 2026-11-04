@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import type {
   CalendarMonth,
   DayStats,
@@ -16,6 +16,8 @@ import { CalendarPnl } from "@/components/calendar-pnl";
 import { DailyBars } from "@/components/charts/daily-bars";
 import { EdgeRadar } from "@/components/charts/edge-radar";
 import { EquityArea } from "@/components/charts/equity-area";
+import { BalanceArea } from "@/components/charts/balance-area";
+import { Sparkline } from "@/components/charts/sparkline";
 import { Gauge } from "@/components/charts/gauge";
 import { RelativeDrawdownBars } from "@/components/charts/relative-drawdown-bars";
 import { TimeHeatmap } from "@/components/charts/time-heatmap";
@@ -136,6 +138,24 @@ function DashboardContent({
   refresh: () => void;
   query: string;
 }) {
+  // The cumulative card can show net P&L or the account balance; the choice is remembered.
+  const [cumView, setCumView] = useState<"pnl" | "balance">("pnl");
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("journal-cumulative-view") === "balance") setCumView("balance");
+    } catch {
+      /* storage can be blocked; keep the default */
+    }
+  }, []);
+  const chooseCumView = (view: "pnl" | "balance") => {
+    setCumView(view);
+    try {
+      localStorage.setItem("journal-cumulative-view", view);
+    } catch {
+      /* ignore */
+    }
+  };
+
   if (loading && !data) return <DashboardSkeleton />;
   if (!data)
     return (
@@ -233,6 +253,13 @@ function DashboardContent({
     ? data.days.reduce((a, b) => (b.netPnl < a.netPnl ? b : a))
     : null;
 
+  // Balance at the end of each trading day: starting balance plus cumulative net P&L.
+  const balanceSeries = [
+    ...(data.dailyCumulative.length ? [{ t: "Start", balance: data.initialBalance }] : []),
+    ...data.dailyCumulative.map((p) => ({ t: p.t, balance: data.initialBalance + p.cumNetPnl })),
+  ];
+  const currentBalance = balanceSeries.at(-1)?.balance ?? data.initialBalance;
+
   return (
     <>
       <CurrencyNotice scope={data.currencyScope} />
@@ -245,7 +272,11 @@ function DashboardContent({
             size: "small",
             layoutGroup: "summary",
             content: (
-              <Card className="h-full">
+              <Card className="relative isolate h-full overflow-hidden">
+                <Sparkline
+                  background
+                  values={data.dailyCumulative.slice(-60).map((p) => p.cumNetPnl)}
+                />
                 <StatHeader
                   title="Net P&L"
                   icon={CircleDollarSign}
@@ -420,7 +451,7 @@ function DashboardContent({
                     {edgeScore.score === null ? (
                       "–"
                     ) : (
-                      <span className="text-brand">{edgeScore.score}</span>
+                      <span className="text-chart-accent">{edgeScore.score}</span>
                     )}
                     <span className="text-xs text-muted-foreground"> /100</span>
                   </span>
@@ -454,17 +485,58 @@ function DashboardContent({
             content: (
               <Card className="dashboard-visual-card h-full">
                 <CardHeader className="flex-row items-center justify-between">
-                  <CardTitle>Daily net cumulative P&L</CardTitle>
-                  <HelpHint heading="Cumulative P&L">
-                    Running total of net profit and loss over the selected period. The drawdown bars
-                    below show declines from the running equity peak.
-                  </HelpHint>
+                  <CardTitle>
+                    {cumView === "balance" ? "Account balance" : "Daily net cumulative P&L"}
+                  </CardTitle>
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    <span
+                      role="group"
+                      aria-label="Chart view"
+                      className="inline-flex rounded-md border border-border/70 bg-muted/40 p-0.5 text-[11px] font-medium"
+                    >
+                      {(
+                        [
+                          ["pnl", "P&L"],
+                          ["balance", "Balance"],
+                        ] as const
+                      ).map(([key, text]) => (
+                        <button
+                          key={key}
+                          type="button"
+                          aria-pressed={cumView === key}
+                          onClick={() => chooseCumView(key)}
+                          className={cn(
+                            "rounded px-2 py-0.5 transition-colors",
+                            cumView === key
+                              ? "bg-background text-foreground shadow-sm"
+                              : "text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          {text}
+                        </button>
+                      ))}
+                    </span>
+                    <HelpHint heading="Cumulative P&L and balance">
+                      P&L is the running total of net profit and loss over the selected period.
+                      Balance is your starting balance plus that total (the dashed line is the
+                      starting balance). The drawdown bars below show declines from the running
+                      equity peak.
+                    </HelpHint>
+                  </span>
                 </CardHeader>
                 <CardContent>
-                  <EquityArea
-                    currency={currency}
-                    data={data.dailyCumulative.map((p) => ({ t: p.t, cumNetPnl: p.cumNetPnl }))}
-                  />
+                  {cumView === "balance" ? (
+                    <BalanceArea
+                      currency={currency}
+                      startBalance={data.initialBalance}
+                      data={balanceSeries}
+                    />
+                  ) : (
+                    <EquityArea
+                      currency={currency}
+                      data={data.dailyCumulative.map((p) => ({ t: p.t, cumNetPnl: p.cumNetPnl }))}
+                    />
+                  )}
                   <RelativeDrawdownBars
                     data={relativeDrawdownCurve(data.dailyCumulative, data.initialBalance)}
                   />
@@ -810,7 +882,9 @@ function StatHeader({
       <CardTitle>{title}</CardTitle>
       <Tooltip>
         <TooltipTrigger className="cursor-help" aria-label={`About ${title}`}>
-          <Icon className="h-3.5 w-3.5 text-muted-foreground/70" />
+          <span className="flex size-6 items-center justify-center rounded-md bg-brand/10 text-brand ring-1 ring-brand/15">
+            <Icon className="h-3.5 w-3.5" />
+          </span>
         </TooltipTrigger>
         <TooltipContent>
           <div className="mb-1 font-semibold">{title}</div>

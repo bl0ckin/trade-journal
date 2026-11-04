@@ -74,6 +74,11 @@ const features = tableFeatures({
 
 const EMPTY_TRADES: TradeRow[] = [];
 
+/** Narrow screens only; evaluated once on the client when the table first renders. */
+const isPhone = () => typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(max-width: 639px)").matches;
+
 export default function TradesPage() {
   return (
     <Suspense fallback={<Loading />}>
@@ -362,6 +367,18 @@ function Trades() {
         emotionalState: false,
         tradeQuality: false,
         confidence: false,
+        // Phones start with the essentials so the table is readable without sideways scrolling.
+        // "Columns" still brings the rest back, and a saved view always wins.
+        ...(isPhone()
+          ? {
+              market: false,
+              quantity: false,
+              avgEntry: false,
+              roi: false,
+              durationMs: false,
+              tags: false,
+            }
+          : {}),
         ...savedView?.columnVisibility,
       },
     },

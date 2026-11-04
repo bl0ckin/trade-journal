@@ -5,10 +5,15 @@ import { connectionKey, providerFor } from "@/server/market-data/connections";
 import { MarketDataError } from "@/server/market-data/provider";
 import { getTradeByKey, rowToTrade } from "@/server/trades-query";
 import { listExecutions } from "@/server/executions";
-import { isResolution } from "@/lib/market-data";
+import { isResolution, type ExcursionEstimate } from "@/lib/market-data";
 import { estimateExcursions } from "@/lib/excursions";
 
 import { estimateFingerprint, saveEstimate, savedEstimates } from "@/server/market-data/estimates";
+
+/** USD and the dollar stablecoins quoted on crypto venues trade at par for journaling purposes. */
+const DOLLARS = new Set(["USD", "USDT", "USDC", "BUSD", "FDUSD", "DAI", "TUSD"]);
+const sameCurrency = (quote: string, account: string | undefined) =>
+  !account || quote === account || (DOLLARS.has(quote) && DOLLARS.has(account));
 
 export const GET = handler(
   async (_request: Request, { params }: { params: Promise<{ key: string }> }) => {
@@ -47,16 +52,16 @@ export const POST = handler(
       body.estimateOnly === undefined || typeof body.estimateOnly === "boolean",
       "Invalid response mode.",
     );
-    requireValue(Boolean(row.closedAt), "Market replay is available for closed trades only.");
     requireValue(
       row.assetClass !== "option",
       "Option contract history is not supported by this connector yet. An underlying's candles cannot stand in for option prices.",
     );
     const from = Date.parse(row.openedAt),
-      to = Date.parse(row.closedAt!);
+      // An open trade is charted from its entry up to now (completed candles only).
+      to = row.closedAt ? Date.parse(row.closedAt) : Date.now();
     requireValue(
       Number.isFinite(from) && Number.isFinite(to) && to > from && to <= Date.now(),
-      "Trade must have valid past entry and exit timestamps.",
+      "Trade must have a valid past entry time and, once closed, a later exit time.",
     );
     try {
       const provider = providerFor(body.provider);
@@ -94,19 +99,28 @@ export const POST = handler(
         .from(accounts)
         .where(eq(accounts.id, row.accountId))
         .get()?.currency;
-      const currencyMatches = !history.quoteCurrency || history.quoteCurrency === accountCurrency;
-      const estimate = estimateExcursions(
-        trade,
-        listExecutions(row.accountId, trade.executionIds),
-        history,
-        body.basisConfirmed === true && currencyMatches,
-      );
-      if (!currencyMatches)
+      const currencyMatches = !history.quoteCurrency || sameCurrency(history.quoteCurrency, accountCurrency);
+      // MAE/MFE need the finished trade, so an open position gets candles only.
+      const estimate: ExcursionEstimate = row.closedAt
+        ? estimateExcursions(
+            trade,
+            listExecutions(row.accountId, trade.executionIds),
+            history,
+            body.basisConfirmed === true && currencyMatches,
+          )
+        : {
+            mae: null,
+            mfe: null,
+            sampledBars: 0,
+            excludedBars: 0,
+            warnings: ["This trade is still open. MAE/MFE are calculated once it closes."],
+          };
+      if (row.closedAt && !currencyMatches)
         estimate.warnings.unshift(
           `The candle quote currency (${history.quoteCurrency}) differs from this account (${accountCurrency}). Monetary estimates are unavailable; no FX conversion is applied.`,
         );
       const current = getTradeByKey(key);
-      if (current && estimateFingerprint(rowToTrade(current)) === fingerprint)
+      if (row.closedAt && current && estimateFingerprint(rowToTrade(current)) === fingerprint)
         saveEstimate(trade, { ...history, estimate }, fingerprint);
       if (body.estimateOnly) {
         const { bars: _bars, ...metadata } = history;

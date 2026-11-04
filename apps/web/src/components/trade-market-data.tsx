@@ -11,7 +11,7 @@ import {
   type TradeMarketResult,
 } from "@/lib/market-data";
 import { providerInfo } from "@/lib/market-providers";
-import { resolveMarket } from "@/lib/markets";
+import { autoMarketTarget, pickResolution } from "@/lib/market-routing";
 import type { MarketCsvDataset } from "@/lib/market-csv";
 import { replayFrame } from "@/lib/trade-replay";
 import { useApi } from "@/lib/use-api";
@@ -88,7 +88,9 @@ export function TradeMarketData({
           symbol: useSymbol,
           dataset: auto ? (auto.dataset ?? "") : dataset,
           resolution: useResolution,
-          basisConfirmed: auto ? false : confirmed,
+          // An automatic load uses the trade's own ticker, and the server still rejects prices that
+          // differ from the fills by more than 20%, so MAE/MFE are calculated and saved too.
+          basisConfirmed: auto ? true : confirmed,
         }),
         signal: request.signal,
       });
@@ -106,33 +108,21 @@ export function TradeMarketData({
     }
   };
 
-  // Charts that load by themselves, once per trade and only when the provider is connected:
-  //  - crypto pairs quoted in USDT use Binance;
-  //  - stocks use Alpaca (IEX feed, which every Alpaca account can read).
-  // Futures are not loaded automatically: Alpaca has no futures data.
+  // Charts and MAE/MFE load by themselves, once per trade, when a matching provider is connected:
+  // Binance or Coinbase for crypto, Alpaca (IEX feed) for stocks. See lib/market-routing.ts.
   const autoTried = useRef(false);
   const [autoLoaded, setAutoLoaded] = useState<{ label: string; provider: string } | null>(null);
   useEffect(() => {
-    if (autoTried.current || !trade.closedAt || !connections) return;
-    const ticker = trade.symbol.toUpperCase().replace(/[^A-Z0-9]/g, "");
-    const stockSymbol = trade.symbol.trim().toUpperCase();
-    const isStock =
-      resolveMarket(trade.assetClass, trade.symbol) === "equity" &&
-      /^[A-Z][A-Z0-9.-]{0,20}$/.test(stockSymbol);
-    const target =
-      ticker.endsWith("USDT") && available.some((item) => item.id === "binance")
-        ? { provider: "binance", symbol: ticker, dataset: "" }
-        : isStock && available.some((item) => item.id === "alpaca")
-          ? { provider: "alpaca", symbol: stockSymbol, dataset: "iex" }
-          : null;
+    if (autoTried.current || !connections) return;
+    const target = autoMarketTarget(
+      trade.symbol,
+      trade.assetClass,
+      available.map((item) => item.id),
+    );
     if (!target) return;
     autoTried.current = true;
     // Pick a candle size that keeps the number of candles reasonable for the trade's length.
-    const span = Date.parse(trade.closedAt) - Date.parse(trade.openedAt);
-    const chosen =
-      (Object.keys(RESOLUTIONS) as Resolution[]).find(
-        (key) => !(span > 0) || span / RESOLUTIONS[key] <= 300,
-      ) ?? "1d";
+    const chosen = pickResolution(trade.openedAt, trade.closedAt ?? new Date().toISOString());
     setProvider(target.provider);
     setSymbol(target.symbol);
     setDataset(target.dataset);
@@ -170,11 +160,14 @@ export function TradeMarketData({
               to use historical replay and estimates.
             </p>
           )}
-          {!trade.closedAt ? (
-            <p className="text-sm text-muted-foreground">Available after this trade closes.</p>
-          ) : (
-            available.length > 0 && (
-              <>
+          {!trade.closedAt && (
+            <p className="text-sm text-muted-foreground">
+              This trade is still open, so the chart runs from your entry up to now. MAE/MFE are
+              calculated once it closes.
+            </p>
+          )}
+          {available.length > 0 && (
+            <>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label htmlFor="market-provider">Data provider</Label>
@@ -324,7 +317,6 @@ export function TradeMarketData({
                   )}
                 </div>
               </>
-            )
           )}
           {autoLoaded && result && (
             <p className="text-xs text-muted-foreground">

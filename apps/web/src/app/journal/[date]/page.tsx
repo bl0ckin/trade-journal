@@ -75,9 +75,12 @@ function JournalDay({ date }: { date: string }) {
   const chronology = useApi<{ days: { date: string }[] }>(`/api/journal?${query}`);
   const [note, setNote] = useState<string | null>(null);
   const noteEditor = useRef<RichEditorHandle>(null);
-  const [noteEditing, setNoteEditing] = useState(false);
-  const { save, status: saving, flush } = useAutosave(`/api/journal/${date}`, "PUT");
+  // Notes open in the finished (preview) view when there is text, and Save now returns there.
+  const [noteModeChoice, setNoteMode] = useState<"preview" | "edit" | null>(null);
+  const { save, status: saving, flush, dirty } = useAutosave(`/api/journal/${date}`, "PUT");
   const noteValue = note ?? data?.note ?? "";
+  const noteMode = noteModeChoice ?? (noteValue.trim() ? "preview" : "edit");
+  const noteEditing = noteMode === "edit";
   const latestNote = useRef(noteValue);
   latestNote.current = noteValue;
   const scheduleSave = (value: string) => {
@@ -178,7 +181,7 @@ function JournalDay({ date }: { date: string }) {
           </nav>
         </div>
 
-        <div className="grid gap-3 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+        <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
           <div className="min-w-0 space-y-3">
             {m && m.closedTrades > 0 ? (
               <Card>
@@ -215,7 +218,7 @@ function JournalDay({ date }: { date: string }) {
                       </p>
                     </div>
                   </div>
-                  <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3 2xl:grid-cols-5">
+                  <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                     <Stat label="Gross">
                       <MonetaryValue>{fmtMoney(m.grossPnl)}</MonetaryValue>
                     </Stat>
@@ -360,7 +363,7 @@ function JournalDay({ date }: { date: string }) {
             {!data && <Skeleton className="h-64" />}
           </div>
 
-          <Card className="h-fit">
+          <Card className="h-fit xl:sticky xl:top-20">
             <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
               <CardTitle>Day note</CardTitle>
               <div className="flex items-center gap-2">
@@ -395,10 +398,6 @@ function JournalDay({ date }: { date: string }) {
                   );
                 })}
               </div>
-              <p className="mb-3 text-xs text-muted-foreground">
-                This note is shared across accounts. AI recaps use the selected filters and append a
-                labeled section. Shared notes are excluded from filtered AI context.
-              </p>
               <div className="mb-3">
                 <AiRecap
                   key={`${date}:${timeZone}:${query}`}
@@ -420,7 +419,8 @@ function JournalDay({ date }: { date: string }) {
                   editorRef={noteEditor}
                   value={noteValue}
                   onChange={scheduleSave}
-                  onModeChange={(next) => setNoteEditing(next === "edit")}
+                  mode={noteMode}
+                  onModeChange={setNoteMode}
                 />
               ) : error ? (
                 <p role="alert" className="text-sm text-destructive">
@@ -431,7 +431,15 @@ function JournalDay({ date }: { date: string }) {
               )}
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span role="status">{saving}</span>
-                <Button variant="ghost" size="sm" onClick={() => void flush()}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={async () => {
+                    await flush();
+                    // Only leave edit mode once everything is saved; a failed save keeps the text open.
+                    if (!dirty()) setNoteMode("preview");
+                  }}
+                >
                   Save now
                 </Button>
               </div>
@@ -448,6 +456,10 @@ function JournalDay({ date }: { date: string }) {
                   ],
                 }}
               />
+              <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+                This note is shared across accounts. AI recaps use the selected filters and append a
+                labeled section. Shared notes are excluded from filtered AI context.
+              </p>
               <p className="mt-3 hidden text-[11px] text-muted-foreground xl:block">
                 Tip: use ← and → to move between journal days.
               </p>

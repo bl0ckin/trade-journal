@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { computeMetrics, dayKeyOf, intradayCurve } from "@luxalgo/journal-core";
+import { computeMetrics, dayKeyOf, intradayCurve, realizations } from "@luxalgo/journal-core";
 import { db, executions, journalDays } from "@/db";
 import { bad, handler, ok } from "@/server/api";
 import { nowIso } from "@/server/ids";
@@ -20,9 +20,13 @@ export const GET = handler(async (request: Request, { params }: Params) => {
     .filter(({ trade }) => trade.closedAt && dayKeyOf(trade.closedAt, timeZone) === date);
   const dayTrades = dayTradeIndexes.map(({ trade }) => trade);
 
+  // The intraday curve also covers trades that finish later but sold part of the position today.
+  const soldToday = trades.filter((trade) =>
+    realizations(trade).some((slice) => dayKeyOf(slice.t, timeZone) === date),
+  );
   // Intraday curve needs exit timestamps — one fetch per involved account.
   const times = new Map<string, string>();
-  for (const accountId of new Set(dayTrades.map((trade) => trade.accountId))) {
+  for (const accountId of new Set(soldToday.map((trade) => trade.accountId))) {
     const fills = db.select().from(executions).where(eq(executions.accountId, accountId)).all();
     for (const fill of fills) times.set(fill.id, fill.executedAt);
   }
@@ -32,7 +36,7 @@ export const GET = handler(async (request: Request, { params }: Params) => {
     date,
     metrics: computeMetrics(dayTrades, { timeZone }),
     trades: dayTradeIndexes.map(({ index }) => rows[index]),
-    intraday: intradayCurve(dayTrades, times, date, timeZone),
+    intraday: intradayCurve(soldToday, times, date, timeZone),
     note: note?.note ?? "",
   });
 });

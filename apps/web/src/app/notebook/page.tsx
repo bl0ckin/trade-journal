@@ -842,7 +842,7 @@ function NoteEditor({
   return (
     <div className="flex min-h-full flex-col">
       {/* Top bar */}
-      <header className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b bg-background/90 px-4 py-2 backdrop-blur sm:px-6">
+      <header className="notebook-editor-bar sticky top-0 z-10 flex flex-wrap items-center gap-x-2 gap-y-1 border-b bg-background/90 px-4 py-2 backdrop-blur sm:px-6">
         <Button type="button" variant="ghost" size="sm" className="md:hidden" onClick={onBack}>
           <ArrowLeft />
           Notes
@@ -930,7 +930,7 @@ function NoteEditor({
               aria-label="Move note to folder"
               value=""
               onValueChange={(destination) => destination && onMove(destination)}
-              className="h-8 rounded-lg border bg-card px-2 text-xs"
+              className="h-8 w-36 shrink-0 rounded-lg border bg-card px-2 text-xs"
             >
               <option value="">Move to…</option>
               {moveTargets.map((item) => (

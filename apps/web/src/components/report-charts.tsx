@@ -32,15 +32,15 @@ export function SectionHeading({
   return (
     <div
       id={id}
-      className="flex scroll-mt-20 flex-wrap items-end justify-between gap-x-4 gap-y-1 border-b border-border/60 pb-2 pt-8 first:pt-2"
+      className="flex scroll-mt-20 flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-b border-[var(--rpt-line)] pb-3 pt-10 first:pt-2"
     >
-      <h2 className="text-base font-semibold tracking-tight">{title}</h2>
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      <h2 className="text-[17px] font-semibold tracking-tight">{title}</h2>
+      {hint && <p className="text-[13px] text-muted-foreground">{hint}</p>}
     </div>
   );
 }
 
-/** Small rounded pill used for verdicts and counts. */
+/** A small status label: a colored dot and plain text. Replaces filled pills. */
 export function Badge({
   tone = "neutral",
   children,
@@ -49,21 +49,22 @@ export function Badge({
   children: ReactNode;
 }) {
   const styles = {
-    good: "bg-profit/10 text-profit",
-    bad: "bg-loss/10 text-loss",
-    warn: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-    neutral: "bg-muted text-muted-foreground",
+    good: "text-profit",
+    bad: "text-loss",
+    warn: "text-amber-600 dark:text-amber-400",
+    neutral: "text-muted-foreground",
   } as const;
   return (
     <span
-      className={`inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${styles[tone]}`}
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap text-[12px] font-medium ${styles[tone]}`}
     >
+      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-current" />
       {children}
     </span>
   );
 }
 
-/** Compact pill switcher for views inside a card. */
+/** Compact switcher for views inside a card. */
 export function Segmented<T extends string>({
   value,
   onChange,
@@ -74,16 +75,16 @@ export function Segmented<T extends string>({
   options: ReadonlyArray<readonly [T, string]>;
 }) {
   return (
-    <div className="inline-flex max-w-full overflow-x-auto rounded-lg border border-border/70 bg-muted/40 p-0.5">
+    <div className="inline-flex max-w-full overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden rounded-md border border-[var(--rpt-line)] p-0.5">
       {options.map(([key, label]) => (
         <button
           key={key}
           type="button"
           aria-pressed={value === key}
           onClick={() => onChange(key)}
-          className={`whitespace-nowrap rounded-md px-3 py-1 text-xs font-medium transition-all ${
+          className={`whitespace-nowrap rounded-[5px] px-3 py-1 text-[12.5px] font-medium transition-colors ${
             value === key
-              ? "bg-card text-foreground shadow-sm ring-1 ring-border/70"
+              ? "bg-foreground text-background"
               : "text-muted-foreground hover:text-foreground"
           }`}
         >
@@ -94,7 +95,7 @@ export function Segmented<T extends string>({
   );
 }
 
-/** Page-level underline tabs. */
+/** Page-level underline tabs. Styled by `.rpt-tab` inside `.report-skin`. */
 export function TabBar<T extends string>({
   value,
   onChange,
@@ -108,32 +109,75 @@ export function TabBar<T extends string>({
     <div
       role="tablist"
       aria-label="Report views"
-      className="-mx-1 flex overflow-x-auto border-b border-border/70 px-1"
+      className="flex gap-6 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden border-b border-[var(--rpt-line)]"
     >
-      {options.map(([key, label]) => {
-        const active = value === key;
-        return (
-          <button
-            key={key}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            onClick={() => onChange(key)}
-            className={`relative whitespace-nowrap px-3.5 py-2.5 text-sm font-medium transition-colors ${
-              active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {label}
-            <span
-              aria-hidden
-              className={`absolute inset-x-3 -bottom-px h-0.5 rounded-full transition-opacity ${
-                active ? "bg-primary opacity-100" : "bg-transparent opacity-0"
-              }`}
-            />
-          </button>
-        );
-      })}
+      {options.map(([key, label]) => (
+        <button
+          key={key}
+          type="button"
+          role="tab"
+          aria-selected={value === key}
+          onClick={() => onChange(key)}
+          className="rpt-tab"
+        >
+          {label}
+        </button>
+      ))}
     </div>
+  );
+}
+
+/**
+ * Several related panels on one surface, split by hairlines instead of a box each.
+ * Keep the panel count equal to the column count so no empty cell shows.
+ */
+export function PanelGroup({
+  panels,
+  className = "lg:grid-cols-3",
+}: {
+  panels: Array<{ title: string; hint?: string; content: ReactNode }>;
+  className?: string;
+}) {
+  return (
+    <section className="rpt-surface overflow-hidden rounded-[10px] border border-[var(--rpt-line)] bg-card">
+      <div className={`grid gap-px bg-[var(--rpt-line)] ${className}`}>
+        {panels.map((panel) => (
+          <div key={panel.title} className="min-w-0 bg-card p-5">
+            <h3 className="text-[14px] font-semibold tracking-tight">{panel.title}</h3>
+            {panel.hint && <p className="mt-0.5 text-[13px] text-muted-foreground">{panel.hint}</p>}
+            <div className="mt-4">{panel.content}</div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * A statement-style grid of figures: hairline dividers instead of a box per figure.
+ * Cells wrap with the container, and the dividers stay even.
+ */
+export function StatGrid({
+  items,
+  className = "grid-cols-2 sm:grid-cols-4",
+}: {
+  items: Array<{ label: string; value: ReactNode; sub?: ReactNode }>;
+  className?: string;
+}) {
+  return (
+    <dl
+      className={`grid gap-px overflow-hidden rounded-lg border border-[var(--rpt-line)] bg-[var(--rpt-line)] ${className}`}
+    >
+      {items.map((item) => (
+        <div key={item.label} className="min-w-0 bg-card px-4 py-3">
+          <dt className="text-[12.5px] text-muted-foreground">{item.label}</dt>
+          <dd className="mt-1 break-words text-[19px] font-semibold leading-tight tracking-tight tabular-nums">
+            {item.value}
+          </dd>
+          {item.sub && <p className="mt-1 text-[12px] text-muted-foreground">{item.sub}</p>}
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -154,7 +198,7 @@ function PnlBar({
 }) {
   const pct = Math.min(100, (Math.abs(value) / scale) * 100);
   const color = value >= 0 ? PROFIT : LOSS;
-  const height = thin ? "h-1.5" : "h-2";
+  const height = thin ? "h-1" : "h-1.5";
   if (!diverging)
     return (
       <div className={`${height} overflow-hidden rounded-full bg-muted/50`}>
@@ -219,14 +263,14 @@ export function DrawdownArea({
   const current = points[points.length - 1]!.dd;
   return (
     <div>
-      <div className="mb-3 flex flex-wrap gap-x-8 gap-y-2">
+      <div className="mb-4 flex flex-wrap gap-x-10 gap-y-2">
         <div>
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Max drawdown</p>
-          <p className="tnum mt-0.5 text-sm font-semibold text-loss">{money(worst, currency)}</p>
+          <p className="text-[12.5px] text-muted-foreground">Max drawdown</p>
+          <p className="tnum mt-0.5 text-lg font-semibold tracking-tight text-loss">{money(worst, currency)}</p>
         </div>
         <div>
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Right now</p>
-          <p className={`tnum mt-0.5 text-sm font-semibold ${current < 0 ? "text-loss" : "text-profit"}`}>
+          <p className="text-[12.5px] text-muted-foreground">Right now</p>
+          <p className={`tnum mt-0.5 text-lg font-semibold tracking-tight ${current < 0 ? "text-loss" : "text-profit"}`}>
             {current === 0 ? "At a new high" : money(current, currency)}
           </p>
         </div>
@@ -351,31 +395,267 @@ export function BarList({
   const scale = Math.max(...shown.map((row) => Math.abs(row.netPnl)), 1);
   const diverging = shown.some((row) => row.netPnl > 0) && shown.some((row) => row.netPnl < 0);
   return (
-    <ul className="space-y-3">
+    <ul className="divide-y divide-[var(--rpt-line)] [&>li]:py-2.5 [&>li:first-child]:pt-0">
       {shown.map((row) => (
         <li
           key={row.key}
-          className="grid grid-cols-[minmax(3.5rem,6.5rem)_1fr_auto] items-center gap-3"
+          className="grid grid-cols-[minmax(3.5rem,6.5rem)_1fr_auto] items-center gap-4"
           title={`${row.trades} trades · win rate ${fmtPercent(row.winRate, 0)}`}
         >
-          <span className="truncate text-sm font-medium" title={row.label}>
+          <span className="truncate text-[13.5px] font-medium" title={row.label}>
             {row.label}
           </span>
           <PnlBar value={row.netPnl} scale={scale} diverging={diverging} />
-          <span className={`tnum min-w-[5.5rem] text-right text-sm font-medium ${pnlClass(row.netPnl)}`}>
+          <span className={`tnum min-w-[5.5rem] text-right text-[13.5px] font-medium ${pnlClass(row.netPnl)}`}>
             {money(row.netPnl, currency)}
-            <span className="block text-[10px] font-normal text-muted-foreground">
+            <span className="block text-[12px] font-normal text-muted-foreground">
               {row.trades} trade{row.trades === 1 ? "" : "s"} · {fmtPercent(row.winRate, 0)} win
             </span>
           </span>
         </li>
       ))}
       {rows.length > shown.length && (
-        <li className="pt-1 text-xs text-muted-foreground">
+        <li className="!border-t-0 pt-3 text-[12.5px] text-muted-foreground">
           Showing {shown.length} of {rows.length}. Breakdowns lists them all.
         </li>
       )}
     </ul>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Breakdown views: each question gets the chart that suits it         */
+/* ------------------------------------------------------------------ */
+
+const compactMoney = (value: number, currency: string) => {
+  try {
+    const text = new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      notation: "compact",
+      maximumFractionDigits: 1,
+    }).format(Math.abs(value));
+    return `${value < 0 ? "-" : value > 0 ? "+" : ""}${text}`;
+  } catch {
+    return fmtMoney(value, currency);
+  }
+};
+
+/** A win rate as 0 to 1; missing or non-numeric values (no decided trades) count as 0. */
+const winShare = (value: number | null | undefined) =>
+  typeof value === "number" && Number.isFinite(value) ? value : 0;
+
+const SERIES = [
+  "var(--series-1, #4c9bff)",
+  "var(--series-3, #2ec9a0)",
+  "var(--series-7, #a393ff)",
+  "var(--series-4, #f2b53c)",
+  "var(--series-5, #ef7fb0)",
+  "var(--series-2, #f08a4b)",
+];
+
+/** Day of week as seven columns: up for profit, down for loss, best day outlined. */
+export function WeekdayColumns({ rows, currency }: { rows: BarRow[]; currency: string }) {
+  if (rows.length === 0)
+    return <p className="py-8 text-center text-sm text-muted-foreground">No data yet.</p>;
+  const scale = Math.max(...rows.map((row) => Math.abs(row.netPnl)), 1);
+  const best = rows.reduce((a, b) => (b.netPnl > a.netPnl ? b : a), rows[0]!);
+  const hasLoss = rows.some((row) => row.netPnl < 0);
+  const half = hasLoss ? 64 : 120;
+  return (
+    <div className="grid grid-cols-7 gap-1.5 sm:gap-2.5">
+      {rows.map((row) => {
+        const height = Math.max((Math.abs(row.netPnl) / scale) * half, row.netPnl === 0 ? 0 : 3);
+        const empty = row.trades === 0;
+        return (
+          <div
+            key={row.key}
+            className="flex min-w-0 flex-col items-center text-center"
+            title={`${row.label}: ${row.trades} trades · win rate ${fmtPercent(row.winRate, 0)}`}
+          >
+            <div
+              className="relative flex w-full flex-col items-center"
+              style={{ height: hasLoss ? half * 2 : half }}
+            >
+              <div
+                className="absolute left-0 right-0 border-t border-dashed border-[var(--rpt-line)]"
+                style={{ top: hasLoss ? half : half }}
+              />
+              {row.netPnl !== 0 && (
+                <div
+                  className={`absolute w-full max-w-9 rounded-sm ${row.key === best.key && best.netPnl > 0 ? "ring-2 ring-offset-1 ring-offset-card ring-[var(--profit-fill,#2b9a6b)]" : ""}`}
+                  style={{
+                    height,
+                    background: row.netPnl > 0 ? PROFIT : LOSS,
+                    ...(row.netPnl > 0 ? { bottom: hasLoss ? half : 0 } : { top: half }),
+                    opacity: empty ? 0.3 : 1,
+                  }}
+                />
+              )}
+            </div>
+            <span className="mt-1.5 text-[12.5px] font-medium">{row.label}</span>
+            <span className={`tnum text-[11.5px] font-medium ${pnlClass(row.netPnl)}`}>
+              <MonetaryValue>{empty ? "–" : compactMoney(row.netPnl, currency)}</MonetaryValue>
+            </span>
+            <span className="text-[11px] text-muted-foreground">
+              {empty ? "no trades" : `${row.trades} · ${fmtPercent(row.winRate, 0)}`}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Holding time as tiles whose width follows how many trades fall in each bucket. */
+export function DurationTiles({ rows, currency }: { rows: BarRow[]; currency: string }) {
+  if (rows.length === 0)
+    return <p className="py-8 text-center text-sm text-muted-foreground">No data yet.</p>;
+  const total = rows.reduce((sum, row) => sum + row.trades, 0) || 1;
+  return (
+    <div className="flex flex-wrap gap-2">
+      {rows.map((row) => (
+        <div
+          key={row.key}
+          className="min-w-[6.5rem] overflow-hidden rounded-lg border bg-muted/20"
+          style={{ flexGrow: Math.max(row.trades, 1), flexBasis: "6.5rem" }}
+          title={`${row.trades} trades · win rate ${fmtPercent(row.winRate, 0)}`}
+        >
+          <div className="h-1" style={{ background: row.netPnl >= 0 ? PROFIT : LOSS }} />
+          <div className="space-y-1 p-2.5">
+            <p className="text-[12.5px] font-medium">{row.label}</p>
+            <p className={`tnum text-base font-semibold ${pnlClass(row.netPnl)}`}>
+              {money(row.netPnl, currency)}
+            </p>
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full"
+                style={{ width: `${Math.round(winShare(row.winRate) * 100)}%`, background: PROFIT }}
+              />
+            </div>
+            <p className="text-[11.5px] text-muted-foreground">
+              {fmtPercent(row.winRate, 0)} win · {row.trades} trade{row.trades === 1 ? "" : "s"} (
+              {Math.round((row.trades / total) * 100)}%)
+            </p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Symbols as a ranked leaderboard with a win-rate meter per row. */
+export function SymbolLeaderboard({
+  rows,
+  currency,
+  limit = 8,
+}: {
+  rows: BarRow[];
+  currency: string;
+  limit?: number;
+}) {
+  if (rows.length === 0)
+    return <p className="py-8 text-center text-sm text-muted-foreground">No data yet.</p>;
+  const shown = rows.slice(0, limit);
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-[13px]">
+        <thead>
+          <tr className="text-left text-[11.5px] uppercase tracking-wide text-muted-foreground">
+            <th className="w-7 pb-1.5 font-medium">#</th>
+            <th className="pb-1.5 font-medium">Symbol</th>
+            <th className="pb-1.5 text-right font-medium">Trades</th>
+            <th className="hidden w-28 pb-1.5 pl-4 font-medium sm:table-cell">Win rate</th>
+            <th className="pb-1.5 text-right font-medium">Net P&L</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-[var(--rpt-line)]">
+          {shown.map((row, index) => (
+            <tr key={row.key}>
+              <td className="py-2 text-muted-foreground tnum">{index + 1}</td>
+              <td className="py-2 font-semibold">{row.label}</td>
+              <td className="py-2 text-right tnum text-muted-foreground">{row.trades}</td>
+              <td className="hidden py-2 pl-4 sm:table-cell">
+                <div className="flex items-center gap-2">
+                  <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${Math.round(winShare(row.winRate) * 100)}%`,
+                        background: winShare(row.winRate) >= 0.5 ? PROFIT : LOSS,
+                      }}
+                    />
+                  </div>
+                  <span className="tnum text-[12px] text-muted-foreground">
+                    {fmtPercent(row.winRate, 0)}
+                  </span>
+                </div>
+              </td>
+              <td className={`py-2 text-right tnum font-medium ${pnlClass(row.netPnl)}`}>
+                {money(row.netPnl, currency)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {rows.length > shown.length && (
+        <p className="pt-2 text-[12.5px] text-muted-foreground">
+          Showing {shown.length} of {rows.length}. Breakdowns lists them all.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Markets as one share bar (by number of trades) with a legend of results. */
+export function MarketShare({
+  rows,
+  currency,
+  empty = "No data yet.",
+}: {
+  rows: BarRow[];
+  currency: string;
+  empty?: string;
+}) {
+  if (rows.length === 0)
+    return <p className="py-8 text-center text-sm text-muted-foreground">{empty}</p>;
+  const total = rows.reduce((sum, row) => sum + row.trades, 0) || 1;
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="mb-1.5 text-[12px] text-muted-foreground">Share of your trades</p>
+        <div className="flex h-3 gap-0.5 overflow-hidden rounded-full">
+          {rows.map((row, index) => (
+            <div
+              key={row.key}
+              title={`${row.label}: ${row.trades} trades`}
+              style={{
+                width: `${(row.trades / total) * 100}%`,
+                background: SERIES[index % SERIES.length],
+                minWidth: row.trades > 0 ? 4 : 0,
+              }}
+            />
+          ))}
+        </div>
+      </div>
+      <ul className="space-y-2">
+        {rows.map((row, index) => (
+          <li key={row.key} className="flex items-center gap-3 text-[13px]">
+            <span
+              className="size-2.5 shrink-0 rounded-full"
+              style={{ background: SERIES[index % SERIES.length] }}
+            />
+            <span className="min-w-0 flex-1 truncate font-medium">{row.label}</span>
+            <span className="tnum text-muted-foreground">
+              {Math.round((row.trades / total) * 100)}% · {fmtPercent(row.winRate, 0)} win
+            </span>
+            <span className={`tnum w-24 text-right font-medium ${pnlClass(row.netPnl)}`}>
+              {money(row.netPnl, currency)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -414,13 +694,13 @@ export function MonthlyTable({ days, currency }: { days: DayLike[]; currency: st
   const profitable = rows.filter(([, m]) => m.pnl > 0).length;
   return (
     <div>
-      <p className="mb-3 text-xs text-muted-foreground">
+      <p className="mb-3 text-[13px] text-muted-foreground">
         {profitable} of {rows.length} recent month{rows.length === 1 ? "" : "s"} finished in profit.
       </p>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[34rem] text-sm">
-          <thead className="text-[11px] uppercase tracking-wide text-muted-foreground">
-            <tr className="border-b border-border/70">
+          <thead className="text-[12.5px] text-muted-foreground">
+            <tr className="border-b border-[var(--rpt-line-strong)]">
               <th className="py-2 pr-3 text-left font-medium">Month</th>
               <th className="px-3 py-2 text-right font-medium">Trades</th>
               <th className="px-3 py-2 text-right font-medium">Win rate</th>
@@ -435,7 +715,7 @@ export function MonthlyTable({ days, currency }: { days: DayLike[]; currency: st
             {rows.map(([key, m]) => {
               const decided = m.wins + m.losses;
               return (
-                <tr key={key} className="border-b border-border/40 transition-colors last:border-0 hover:bg-accent/30">
+                <tr key={key} className="border-b border-[var(--rpt-line)] last:border-0">
                   <td className="py-2.5 pr-3 font-medium">
                     {MONTHS[Number(key.slice(5, 7)) - 1]} {key.slice(0, 4)}
                   </td>
@@ -476,19 +756,19 @@ export function TopTrades({
   if (trades.length === 0)
     return <p className="py-8 text-center text-sm text-muted-foreground">{empty}</p>;
   return (
-    <ul className="divide-y divide-border/50">
+    <ul className="divide-y divide-[var(--rpt-line)]">
       {trades.map((trade, index) => (
         <li key={trade.key}>
           <Link
             href={tradePath(trade.key)}
-            className="-mx-2 flex items-center justify-between gap-3 rounded-md px-2 py-2.5 transition-colors hover:bg-accent/40"
+            className="-mx-2 flex items-center justify-between gap-3 rounded-md px-2 py-2.5 transition-colors hover:bg-foreground/[0.03]"
           >
             <span className="flex min-w-0 items-center gap-3">
               <span className="tnum w-4 shrink-0 text-xs text-muted-foreground">{index + 1}</span>
               <span className="min-w-0">
                 <span className="font-medium">{trade.symbol}</span>{" "}
                 <span
-                  className={`text-[11px] font-medium uppercase tracking-wide ${trade.direction === "long" ? "text-profit" : "text-loss"}`}
+                  className={`text-[12px] font-medium capitalize ${trade.direction === "long" ? "text-profit" : "text-loss"}`}
                 >
                   {trade.direction}
                 </span>

@@ -80,6 +80,12 @@ export interface ExitAttribution {
   /** Realized net-of-nothing (gross) P&L attributed to this exit under the account's method. */
   grossPnl: number;
   quantity: number;
+  /**
+   * When the exit fill happened (ISO 8601). Lets daily P&L land on the day each
+   * part of a position was sold. Rows saved before this field existed lack it
+   * until the account is rebuilt; consumers fall back to the trade's close time.
+   */
+  executedAt?: string;
 }
 
 export interface RoundTrip {

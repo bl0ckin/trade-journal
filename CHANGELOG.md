@@ -6,6 +6,35 @@ All notable changes to this project are documented here. The format follows [Kee
 
 Changes made in this fork, relative to LuxAlgo's Trade Journal snapshot of 2026-09-30 (`trade-journal-main`). A file-level map, schema notes and merge hotspots are in [`main/own-changes.md`](own-changes.md).
 
+### Latest updates (2026-11-03)
+
+Everything below was added after the first snapshot upload of this fork.
+
+**Added**
+
+- **P&L lands on the day you sold.** A position sold in parts over several days now books each part's P&L on the day of that sell, instead of putting all of it on the day the position went flat. Fees are spread across the sells by quantity, so the daily numbers still add up to the trade totals. Each saved exit now stores its fill time (`executedAt`); a one-time rebuild of every account runs at startup to add it to existing trades (flag: `exitTimesBackfilled` in `settings`; notes, tags and ratings are kept). Applies to the month and year calendars, the daily journal's intraday curve, the dashboard's daily charts and the daily risk limit. A trade is still counted (win or loss, volume) on the day it closes, and partial sells of a position that is still open are not counted until it is flat
+- **Current price.** `GET /api/quote?symbol=` returns the latest traded price (Alpaca IEX for stocks, Binance or Coinbase for crypto) and `GET /api/symbols/search?q=` searches tickers across the connected sources. Add trade has a ticker search dropdown and a small lightning icon inside every Price field; the same icon is on the trade page's price fields and in the Close trade dialog on the Trades page
+- **MAE/MFE estimates calculate themselves.** Opening a trade's chart now saves MAE/MFE when a provider is connected, and Reports has an "Automatic (by ticker)" source and candle size for the bulk calculator (`lib/market-routing.ts`: Binance for USDT/USDC pairs, Coinbase for USD pairs, Alpaca for stocks). USD and the dollar stablecoins count as the same currency when checking the price basis
+- **Charts for open trades.** The trade chart and replay load for a trade that is still open (entry up to the latest completed candle); MAE/MFE wait until it closes
+- **Dashboard.** The Daily net cumulative P&L card has a P&L / Balance switch (balance is starting balance plus cumulative P&L, with the starting balance as a dashed line); the choice is remembered. The Net P&L card has a faded trend line behind it. New `--chart-accent` violet for charts and score highlights
+- **Reports.** The Day of week, Holding time, By symbol and By market sections each have their own chart instead of the same bar list: weekday columns, proportional holding-time tiles, a ranked symbol leaderboard and a market share bar. The summary row, KPI strip, takeaways, statistics list, Performance trends, Trade explorer and Habits sections were restyled
+- **Prop firms.** Filters moved into a Filters button and panel (with an active-filter count and a "Showing" line); "More" menu for templates, CSV import and export; "Needs attention" shown first; a three-step guide for new users and a one-line hint under each tab; the Add account form is grouped into Account, Dates and What you paid with rarely used fields under "More options"; the price paid can now be edited on an existing account (updates the account's first expense in the same save)
+- **Journal and notes.** Journal list rebuilt with day tiles and cleaner stat cards; the daily note opens in a finished view when it has text, and Save returns to it; the rich editor has a read view and an empty state; tidier notebook toolbar
+- **Restore from backup.** Settings → Data & backups has a "Restore from a backup" card that reads a Full backup (JSON) file. It shows what it would add before changing anything, then merges: missing accounts (without broker logins), fills, notes, folders, playbooks, daily journal notes, progress, missed trades, prop firm records and the saved tag and mistake lists are added, the trades are rebuilt from the fills, and each trade's notes, tags, mistakes, rating, confidence, trade quality, emotional state, playbook, reviewed flag and planned stop and target are put back by trade key. Existing annotations are kept unless "Replace" is ticked, and nothing is ever deleted. It runs in one transaction, so a failed restore changes nothing (`POST /api/restore`, `server/restore.ts`, test `restore-backup.test.ts`). Attachment files are not in a backup and are not restored
+- **Export.** The full JSON backup now also carries the saved tag and mistake lists (`settings.tagLibrary`, `settings.mistakeLibrary`)
+
+**Changed**
+
+- Mobile: the app uses the whole screen on notched phones (viewport-fit and safe-area padding), larger touch targets on touch screens, a compact column set by default in the Trades table on phones, and tab and range strips no longer show a scrollbar
+- Add trade: Symbol and Market share one row, narrower date box, roomier Side, Qty, Price and Fee fields
+- The date picker no longer scrolls as a whole; only the hour and minute lists scroll
+- Dark theme: deep midnight-indigo surfaces with a brighter azure accent, a violet chart accent and tinted icon chips; Geist and Geist Mono are the app fonts, and chart text uses the page font
+- Primary buttons are white-on-dark in the dark theme
+
+**Fixed**
+
+- The automatic chart load never calculated MAE/MFE (it always sent "basis not confirmed"), and USDT-quoted trades were rejected as a currency mismatch against USD accounts
+
 ### Added
 
 **Trade entry and editing**

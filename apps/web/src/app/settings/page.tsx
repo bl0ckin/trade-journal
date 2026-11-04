@@ -11,6 +11,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { RiskLimitSettings } from "@/components/risk-limit-settings";
+import { RestoreBackup } from "@/components/restore-backup";
 import { JournalDefaultSettings } from "@/components/journal-default-settings";
 import { ContractMultiplierSettings, TimeZoneSettings } from "@/components/journal-settings";
 import { MarketDataSettings } from "@/components/market-data-settings";
@@ -204,6 +205,7 @@ function Settings() {
                     </CardContent>
                   </Card>
                 )}
+                {id === "your-data" && <RestoreBackup />}
               </div>
             </section>
           ))}

@@ -10,5 +10,7 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     const { startAutoSyncScheduler } = await import("@/server/auto-sync");
     startAutoSyncScheduler();
+    const { backfillExitTimes } = await import("@/server/exit-times-backfill");
+    backfillExitTimes();
   }
 }

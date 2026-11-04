@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check } from "lucide-react";
+import { Check, Zap } from "lucide-react";
 import { MonetaryField } from "@/components/privacy";
 import { Button } from "@/components/ui/button";
 import {
@@ -43,6 +43,8 @@ export function CloseTradeDialog({
   const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [pricing, setPricing] = useState(false);
+  const [priceNote, setPriceNote] = useState<{ text: string; bad?: boolean } | null>(null);
   const exitSide = trade.direction === "long" ? "Sell" : "Buy";
 
   const onOpenChange = (next: boolean) => {
@@ -54,6 +56,28 @@ export function CloseTradeDialog({
       setDatetime(nowZonedInput(timeZone));
       setTouched(false);
       setError("");
+      setPriceNote(null);
+    }
+  };
+
+  /** Fill the exit price with the latest traded price for this symbol. */
+  const fillCurrentPrice = async () => {
+    setPricing(true);
+    setPriceNote(null);
+    try {
+      const response = await fetch(`/api/quote?symbol=${encodeURIComponent(trade.symbol.trim())}`);
+      const body = (await response.json()) as { price?: number; provider?: string; error?: string };
+      if (!response.ok || typeof body.price !== "number" || !(body.price > 0))
+        throw new Error(body.error ?? "Could not get a price.");
+      setPrice(String(body.price));
+      setPriceNote({ text: `Latest ${body.provider} price filled in.` });
+    } catch (cause) {
+      setPriceNote({
+        text: cause instanceof Error ? cause.message : "Could not get a price.",
+        bad: true,
+      });
+    } finally {
+      setPricing(false);
     }
   };
 
@@ -134,17 +158,30 @@ export function CloseTradeDialog({
               </label>
               <label className="grid gap-1 text-xs text-muted-foreground">
                 Exit price
-                <MonetaryField>
-                  <Input
-                    autoFocus
-                    inputMode="decimal"
-                    value={price}
-                    onChange={(event) => setPrice(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") void submit();
-                    }}
-                  />
-                </MonetaryField>
+                <div className="relative">
+                  <MonetaryField>
+                    <Input
+                      autoFocus
+                      inputMode="decimal"
+                      className="pr-9"
+                      value={price}
+                      onChange={(event) => setPrice(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") void submit();
+                      }}
+                    />
+                  </MonetaryField>
+                  <button
+                    type="button"
+                    title="Fill in the current market price"
+                    aria-label="Use current price for the exit"
+                    disabled={pricing}
+                    onClick={() => void fillCurrentPrice()}
+                    className="absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
+                  >
+                    <Zap className={`size-3.5 ${pricing ? "animate-pulse" : ""}`} />
+                  </button>
+                </div>
               </label>
               <label className="grid gap-1 text-xs text-muted-foreground">
                 Fee (optional)
@@ -157,6 +194,14 @@ export function CloseTradeDialog({
                 </MonetaryField>
               </label>
             </div>
+            {priceNote && (
+              <p
+                role={priceNote.bad ? "alert" : "status"}
+                className={`text-xs ${priceNote.bad ? "text-destructive" : "text-muted-foreground"}`}
+              >
+                {priceNote.text}
+              </p>
+            )}
             {error && (
               <p role="alert" className="text-sm text-destructive">
                 {error}

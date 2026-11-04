@@ -195,7 +195,7 @@ export const calendarMonthFromDays = (
     weeks,
     monthNetPnl: traded.reduce((total, d) => total + d.netPnl, 0),
     monthTrades: traded.reduce((total, d) => total + d.trades, 0),
-    tradingDays: traded.filter((d) => d.trades > 0).length,
+    tradingDays: traded.filter((d) => d.trades > 0 || d.netPnl !== 0).length,
     winningDays: traded.filter((d) => d.netPnl > 0).length,
   };
 };

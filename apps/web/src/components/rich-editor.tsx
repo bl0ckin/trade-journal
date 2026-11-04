@@ -4,7 +4,7 @@ import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
-import { ChevronDown, FileText, Settings2 } from "lucide-react";
+import { ChevronDown, FileText, PenLine, Settings2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -125,8 +125,8 @@ export function RichEditor({
     });
   }
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-1">
+    <div className="rich-editor space-y-2">
+      <div className={`flex flex-wrap items-center gap-1 empty:hidden ${preview ? "" : "rich-editor-toolbar"}`}>
         {showModeToggle && (
           <Button type="button" variant="outline" size="sm" onClick={() => setPreview(!preview)}>
             {preview ? "Edit" : "Preview"}
@@ -299,14 +299,34 @@ export function RichEditor({
         </div>
       )}
       {preview ? (
-        <div className="min-h-40 rounded-md border p-3">
-          <Markdown>{value || "Nothing written yet."}</Markdown>
+        <div className="rich-editor-read">
+          {value.trim() ? (
+            <Markdown>{value}</Markdown>
+          ) : (
+            <div className="rich-editor-empty">
+              <span className="rich-editor-empty-icon">
+                <PenLine className="size-4" aria-hidden />
+              </span>
+              <span>Nothing written yet.</span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setPreview(false);
+                  requestAnimationFrame(() => ref.current?.focus());
+                }}
+              >
+                Start writing
+              </Button>
+            </div>
+          )}
         </div>
       ) : (
         <textarea
           ref={ref}
           aria-label="Review notes"
-          className={`${fieldClass} min-h-48 resize-y font-mono text-[13px]`}
+          className="rich-editor-input"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}

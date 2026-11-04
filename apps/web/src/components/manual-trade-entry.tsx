@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
-import { X } from "lucide-react";
+import { X, Zap } from "lucide-react";
 import { MonetaryField } from "@/components/privacy";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { postJson, useApi } from "@/lib/use-api";
+import type { SymbolHit } from "@/lib/market-routing";
 
 import { AccountPicker } from "./account-picker";
 import { nowZonedInput, zonedInputToIso } from "@/lib/datetime-input";
@@ -99,6 +100,59 @@ export function ManualTradeEntry({
     setSymbol(name);
     if (!marketPicked) setMarket(inferMarket(name) ?? "none");
     applyKnownQuantity(name);
+  };
+  // Ticker search across the connected data sources (Alpaca stocks, Binance/Coinbase crypto).
+  const [hits, setHits] = useState<SymbolHit[]>([]);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [priceStatus, setPriceStatus] = useState<{ leg: number; text: string; bad?: boolean } | null>(
+    null,
+  );
+  const [pricing, setPricing] = useState<number | null>(null);
+  useEffect(() => {
+    const query = symbol.trim();
+    if (!searchOpen || query.length < 1) {
+      setHits([]);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      fetch(`/api/symbols/search?q=${encodeURIComponent(query)}`, { signal: controller.signal })
+        .then((response) => (response.ok ? response.json() : { results: [] }))
+        .then((body: { results?: SymbolHit[] }) => setHits(body.results ?? []))
+        .catch(() => {});
+    }, 250);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [symbol, searchOpen]);
+  const pickHit = (hit: SymbolHit) => {
+    setSymbol(hit.symbol);
+    if (!marketPicked) setMarket(hit.market);
+    applyKnownQuantity(hit.symbol);
+    setSearchOpen(false);
+    setHits([]);
+  };
+  /** Fill one execution's price with the latest traded price for the symbol. */
+  const fillCurrentPrice = async (index: number) => {
+    setPricing(index);
+    setPriceStatus(null);
+    try {
+      const response = await fetch(`/api/quote?symbol=${encodeURIComponent(symbol.trim())}`);
+      const body = (await response.json()) as { price?: number; provider?: string; error?: string };
+      if (!response.ok || typeof body.price !== "number" || !(body.price > 0))
+        throw new Error(body.error ?? "Could not get a price.");
+      setLeg(index, { price: String(body.price) });
+      setPriceStatus({ leg: index, text: `Latest ${body.provider} price filled in.` });
+    } catch (error) {
+      setPriceStatus({
+        leg: index,
+        text: error instanceof Error ? error.message : "Could not get a price.",
+        bad: true,
+      });
+    } finally {
+      setPricing(null);
+    }
   };
   // Times are entered and shown in the journal timezone, like the trade pages.
   const { data: settings } = useApi<{ timeZone: string }>("/api/settings");
@@ -186,23 +240,49 @@ export function ManualTradeEntry({
   return (
     <fieldset disabled={busy} className="min-w-0 space-y-3">
       <AccountPicker value={accountId} onChange={setAccountId} kind="manual" />
-      <div>
+      <div className="grid min-w-0 items-start gap-3 sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+      <div className="min-w-0">
         <Label htmlFor={`${fieldId}-symbol`} className="mb-1 block text-xs text-muted-foreground">
           Symbol
         </Label>
-        <Input
-          id={`${fieldId}-symbol`}
-          value={symbol}
-          list={`${fieldId}-symbols`}
-          autoComplete="off"
-          onChange={(event) => chooseSymbol(event.target.value.toUpperCase())}
-          placeholder="AAPL, ESZ6, BTCUSDT…"
-        />
-        <datalist id={`${fieldId}-symbols`}>
-          {(known?.symbols ?? []).map((item) => (
-            <option key={item.symbol} value={item.symbol} />
-          ))}
-        </datalist>
+        <div className="relative">
+          <Input
+            id={`${fieldId}-symbol`}
+            value={symbol}
+            autoComplete="off"
+            role="combobox"
+            aria-expanded={searchOpen && hits.length > 0}
+            aria-controls={`${fieldId}-symbols`}
+            onChange={(event) => {
+              chooseSymbol(event.target.value.toUpperCase());
+              setSearchOpen(true);
+            }}
+            onFocus={() => setSearchOpen(true)}
+            onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
+            placeholder="Search AAPL, BTCUSDT, ESZ6…"
+          />
+          {searchOpen && hits.length > 0 && (
+            <ul
+              id={`${fieldId}-symbols`}
+              role="listbox"
+              className="absolute left-0 right-0 z-50 mt-1 max-h-64 overflow-auto rounded-md border bg-popover p-1 text-sm shadow-md"
+            >
+              {hits.map((hit) => (
+                <li key={`${hit.provider}:${hit.symbol}`} role="option" aria-selected={false}>
+                  <button
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => pickHit(hit)}
+                    className="flex w-full items-center justify-between gap-3 rounded px-2 py-1.5 text-left hover:bg-accent"
+                  >
+                    <span className="font-medium">{hit.symbol}</span>
+                    <span className="min-w-0 truncate text-xs text-muted-foreground">{hit.name}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
         {recent.length > 0 && (
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             <span className="text-xs text-muted-foreground">Recent:</span>
@@ -219,8 +299,10 @@ export function ManualTradeEntry({
           </div>
         )}
       </div>
-      <div className="grid min-w-0 gap-1 text-xs text-muted-foreground">
-        <span id={`${fieldId}-market`}>Market</span>
+      <div className="min-w-0 text-xs text-muted-foreground">
+        <Label id={`${fieldId}-market`} className="mb-1 block text-xs text-muted-foreground">
+          Market
+        </Label>
         <Select
           value={market}
           onValueChange={(value) => {
@@ -241,8 +323,9 @@ export function ManualTradeEntry({
           </SelectContent>
         </Select>
         {!marketPicked && market !== "none" && (
-          <span>Detected from the ticker. Change it if that’s wrong.</span>
+          <span className="mt-1 block">Detected from the ticker. Change it if that’s wrong.</span>
         )}
+      </div>
       </div>
       <DailyLimitWarning accountId={accountId} />
       <div className="manual-executions space-y-3">
@@ -298,17 +381,31 @@ export function ManualTradeEntry({
                 onChange={(event) => setLeg(index, { quantity: event.target.value })}
               />
             </label>
-            <label className="grid min-w-0 gap-1 text-xs text-muted-foreground">
-              Price
-              <MonetaryField>
-                <Input
-                  placeholder="price"
-                  inputMode="decimal"
-                  value={leg.price}
-                  onChange={(event) => setLeg(index, { price: event.target.value })}
-                />
-              </MonetaryField>
-            </label>
+            <div className="grid min-w-0 gap-1 text-xs text-muted-foreground">
+              <label htmlFor={`${fieldId}-price-${index}`}>Price</label>
+              <div className="relative">
+                <MonetaryField>
+                  <Input
+                    id={`${fieldId}-price-${index}`}
+                    placeholder="price"
+                    inputMode="decimal"
+                    className="pr-9"
+                    value={leg.price}
+                    onChange={(event) => setLeg(index, { price: event.target.value })}
+                  />
+                </MonetaryField>
+                <button
+                  type="button"
+                  title="Fill in the current market price"
+                  aria-label={`Use current price for execution ${index + 1}`}
+                  disabled={!symbol.trim() || pricing !== null}
+                  onClick={() => fillCurrentPrice(index)}
+                  className="absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
+                >
+                  <Zap className={`size-3.5 ${pricing === index ? "animate-pulse" : ""}`} />
+                </button>
+              </div>
+            </div>
             <label className="grid min-w-0 gap-1 text-xs text-muted-foreground">
               Fee
               <MonetaryField>
@@ -323,6 +420,14 @@ export function ManualTradeEntry({
           </fieldset>
         ))}
       </div>
+      {priceStatus && (
+        <p
+          role={priceStatus.bad ? "alert" : "status"}
+          className={`text-xs ${priceStatus.bad ? "text-destructive" : "text-muted-foreground"}`}
+        >
+          Execution {priceStatus.leg + 1}: {priceStatus.text}
+        </p>
+      )}
       <div className="space-y-1">
         <Label htmlFor={`${fieldId}-notes`}>Notes (optional)</Label>
         <textarea

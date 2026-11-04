@@ -259,7 +259,7 @@ export function DateTimePicker({
           align="start"
           sideOffset={8}
           collisionPadding={12}
-          className="journal-popup journal-menu-surface z-[70] w-fit max-w-[calc(100vw-24px)] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto rounded-2xl border bg-popover p-4 text-popover-foreground outline-none"
+          className="journal-popup journal-menu-surface z-[70] w-fit max-w-[calc(100vw-24px)] overflow-hidden rounded-2xl border bg-popover p-4 text-popover-foreground outline-none"
         >
           <div className="mb-3 flex items-baseline justify-between gap-3 px-1">
             <p className="text-sm font-semibold tracking-tight">{summary}</p>

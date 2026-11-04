@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { AlertTriangle, CheckCircle2, Info, XCircle } from "lucide-react";
 import type { BucketStats, EquityPoint, TradeMetrics } from "@luxalgo/journal-core";
 import type { ExtendedStats } from "@/lib/extended-stats";
 import { fmtBalance, fmtDuration, fmtMoney, fmtNumber, fmtPercent } from "@/lib/utils";
@@ -413,22 +412,46 @@ export function buildInsights({ metrics, extended, currency, days, dailyCumulati
   return out.sort((a, b) => a.rank - b.rank);
 }
 
-const TONES: Record<Tone, { icon: typeof Info; chip: string; edge: string }> = {
-  good: { icon: CheckCircle2, chip: "bg-profit/10 text-profit", edge: "border-l-profit/70" },
-  bad: { icon: XCircle, chip: "bg-loss/10 text-loss", edge: "border-l-loss/70" },
-  warn: {
-    icon: AlertTriangle,
-    chip: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-    edge: "border-l-amber-500/70",
-  },
-  info: { icon: Info, chip: "bg-primary/10 text-primary", edge: "border-l-primary/70" },
+/** Marker color per tone. Color only reinforces: the headline always states the finding. */
+const MARKER: Record<Tone, string> = {
+  good: "bg-profit",
+  bad: "bg-loss",
+  warn: "bg-amber-500",
+  info: "bg-primary",
 };
+
+function InsightList({ title, items }: { title: string; items: Insight[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="min-w-0">
+      <h3 className="border-b border-[var(--rpt-line-strong)] pb-2 text-[13px] font-medium text-muted-foreground">
+        {title}
+      </h3>
+      <ul className="divide-y divide-[var(--rpt-line)]">
+        {items.map((insight) => (
+          <li key={insight.id} className="flex gap-3 py-3.5">
+            <span
+              aria-hidden
+              className={`mt-[7px] size-1.5 shrink-0 rounded-full ${MARKER[insight.tone]}`}
+            />
+            <div className="min-w-0">
+              <p className="text-[14px] font-medium leading-snug">{insight.title}</p>
+              <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">{insight.body}</p>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 export function ReportInsights(props: InsightInput) {
   const [expanded, setExpanded] = useState(false);
   const insights = buildInsights(props);
   const { metrics, currency, days } = props;
   const shown = expanded ? insights : insights.slice(0, VISIBLE);
+  const working = shown.filter((insight) => insight.tone === "good" || insight.tone === "info");
+  const attention = shown.filter((insight) => insight.tone === "bad" || insight.tone === "warn");
   const profitFactor = metrics.profitFactorIsInfinite
     ? "no losing trades"
     : metrics.profitFactor === null
@@ -437,45 +460,29 @@ export function ReportInsights(props: InsightInput) {
 
   return (
     <Card>
-      <CardHeader className="pb-1">
+      <CardHeader>
         <CardTitle>Key takeaways</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <p className="max-w-3xl text-sm leading-relaxed text-foreground/90">
+      <CardContent className="space-y-6">
+        <p className="max-w-3xl text-[15px] leading-relaxed text-foreground/90">
           Over {days.length} trading day{days.length === 1 ? "" : "s"} and {metrics.closedTrades} closed trade
           {metrics.closedTrades === 1 ? "" : "s"} you netted {signed(metrics.netPnl, currency)}, winning{" "}
           {fmtPercent(metrics.winRate, 0)} of trades
           {profitFactor ? ` with ${profitFactor}` : ""}.
         </p>
         {insights.length === 0 ? (
-          <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+          <p className="text-[13px] text-muted-foreground">
             Log a few more trades (at least {MIN_TRADES} per symbol, weekday or hour) and specific patterns will show up
             here.
           </p>
         ) : (
-          <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {shown.map((insight) => {
-              const tone = TONES[insight.tone];
-              const Icon = tone.icon;
-              return (
-                <li
-                  key={insight.id}
-                  className={`flex gap-3 rounded-lg border border-l-2 border-border/60 bg-muted/20 p-3 ${tone.edge}`}
-                >
-                  <span className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full ${tone.chip}`}>
-                    <Icon className="size-3.5" aria-hidden />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold leading-snug">{insight.title}</p>
-                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{insight.body}</p>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+          <div className="grid gap-x-12 gap-y-8 md:grid-cols-2">
+            <InsightList title="What’s working" items={working} />
+            <InsightList title="Needs attention" items={attention} />
+          </div>
         )}
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[12px] text-muted-foreground">
             Generated from your filtered trades.
             {metrics.closedTrades < 30 ? " Under 30 trades, patterns can easily be noise." : ""}
           </p>
@@ -483,7 +490,7 @@ export function ReportInsights(props: InsightInput) {
             <button
               type="button"
               onClick={() => setExpanded((value) => !value)}
-              className="text-xs font-medium text-primary hover:underline"
+              className="text-[13px] font-medium text-foreground underline decoration-border underline-offset-4 hover:decoration-foreground"
             >
               {expanded ? "Show fewer" : `Show ${insights.length - VISIBLE} more`}
             </button>

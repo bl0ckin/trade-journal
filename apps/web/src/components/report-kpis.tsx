@@ -16,72 +16,30 @@ const money = (value: number, currency: string) => (
 
 type Tone = "good" | "bad" | "warn" | "neutral";
 
-function KpiCard({
+/** One figure in the statement row: label, value, a one-word verdict, then fine print. */
+function Metric({
   label,
   children,
+  verdict,
   caption,
   footer,
-  accent,
-  verdict,
-  className = "",
-  large = false,
 }: {
   label: string;
   children: ReactNode;
+  verdict?: { tone: Tone; text: string };
   caption?: ReactNode;
   footer?: ReactNode;
-  accent?: ReactNode;
-  verdict?: { tone: Tone; text: string };
-  className?: string;
-  large?: boolean;
 }) {
   return (
-    <div
-      className={`card-sheen flex min-w-0 flex-col justify-between gap-3 rounded-xl border border-border/70 bg-card p-4 ${className}`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-              {label}
-            </p>
-            {verdict && <Badge tone={verdict.tone}>{verdict.text}</Badge>}
-          </div>
-          <div
-            className={`mt-2 break-words font-semibold tabular-nums leading-none tracking-tight ${
-              large ? "text-3xl sm:text-4xl" : "text-2xl"
-            }`}
-          >
-            {children}
-          </div>
-          {caption && <p className="mt-2 text-xs leading-snug text-muted-foreground">{caption}</p>}
-        </div>
-        {accent}
+    <div className="flex min-w-0 flex-col gap-1 bg-card px-5 py-4">
+      <p className="text-[13px] text-muted-foreground">{label}</p>
+      <div className="break-words text-[24px] font-semibold leading-tight tracking-tight tabular-nums">
+        {children}
       </div>
-      {footer && <div className="text-xs text-muted-foreground">{footer}</div>}
+      {verdict && <Badge tone={verdict.tone}>{verdict.text}</Badge>}
+      {caption && <p className="text-[12px] leading-snug text-muted-foreground">{caption}</p>}
+      {footer && <div className="mt-auto pt-2 text-[12px] text-muted-foreground">{footer}</div>}
     </div>
-  );
-}
-
-/** A circular gauge for a 0..1 ratio. */
-function Ring({ value, size = 56 }: { value: number; size?: number }) {
-  const radius = 22;
-  const circumference = 2 * Math.PI * radius;
-  const filled = Math.max(0, Math.min(1, value)) * circumference;
-  return (
-    <svg width={size} height={size} viewBox="0 0 56 56" aria-hidden className="shrink-0 -rotate-90">
-      <circle cx="28" cy="28" r={radius} fill="none" strokeWidth="6" style={{ stroke: "var(--border, #2c2c2a)" }} />
-      <circle
-        cx="28"
-        cy="28"
-        r={radius}
-        fill="none"
-        strokeWidth="6"
-        strokeLinecap="round"
-        strokeDasharray={`${filled} ${circumference}`}
-        style={{ stroke: PROFIT }}
-      />
-    </svg>
   );
 }
 
@@ -98,9 +56,9 @@ function Sparkline({ data }: { data: EquityPoint[] }) {
   const up = values[values.length - 1]! >= 0;
   const color = up ? PROFIT : LOSS;
   return (
-    <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-14 w-32 shrink-0 sm:w-44" aria-hidden>
-      <path d={area} style={{ fill: color, opacity: 0.12 }} />
-      <path d={path} fill="none" strokeWidth="2" vectorEffect="non-scaling-stroke" style={{ stroke: color }} />
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-20 w-full" aria-hidden>
+      <path d={area} style={{ fill: color, opacity: 0.1 }} />
+      <path d={path} fill="none" strokeWidth="1.75" vectorEffect="non-scaling-stroke" style={{ stroke: color }} />
     </svg>
   );
 }
@@ -110,7 +68,7 @@ function Split({ left, right }: { left: number; right: number }) {
   const total = left + right;
   const share = total > 0 ? (left / total) * 100 : 50;
   return (
-    <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-muted/60">
+    <div className="flex h-1 w-full overflow-hidden rounded-full bg-muted/60">
       <div style={{ width: `${share}%`, background: PROFIT }} />
       <div style={{ width: `${100 - share}%`, background: LOSS }} />
     </div>
@@ -127,6 +85,10 @@ const profitFactorVerdict = (metrics: TradeMetrics): { tone: Tone; text: string 
   return { tone: "bad", text: "Losing" };
 };
 
+/**
+ * The report's headline: one panel read like the top of a statement. Net P&L leads, with the
+ * equity line beside it, and the supporting figures sit underneath on hairline dividers.
+ */
 export function KpiStrip({
   metrics,
   extended,
@@ -161,95 +123,106 @@ export function KpiStrip({
     winLoss === null ? undefined : winLoss >= 1 ? { tone: "good", text: "Winners > losers" } : { tone: "warn", text: "Winners < losers" };
 
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <KpiCard
-        large
-        className="col-span-2"
-        label="Net P&L"
-        accent={<Sparkline data={daily} />}
-        caption={
-          <>
+    <section
+      aria-label="Key figures"
+      className="rpt-surface overflow-hidden rounded-[10px] border border-[var(--rpt-line)] bg-card"
+    >
+      <div
+        className="flex flex-wrap items-end justify-between gap-x-10 gap-y-4 px-5 pb-6 pt-6 sm:px-7"
+        style={{
+          backgroundImage: `linear-gradient(120deg, color-mix(in srgb, ${metrics.netPnl >= 0 ? "var(--profit-fill)" : "var(--loss)"} 9%, transparent), transparent 60%)`,
+        }}
+      >
+        <div className="min-w-0">
+          <p className="text-[13px] text-muted-foreground">Net P&L</p>
+          <p className="mt-1 break-words text-[40px] font-semibold leading-none tracking-[-0.03em] tabular-nums sm:text-[48px]">
+            <span className={pnlClass(metrics.netPnl)}>{money(metrics.netPnl, currency)}</span>
+          </p>
+          <p className="mt-3 text-[13px] text-muted-foreground">
             {money(metrics.grossPnl, currency)} gross, after {money(-metrics.fees, currency)} in fees
-          </>
-        }
-      >
-        <span className={pnlClass(metrics.netPnl)}>{money(metrics.netPnl, currency)}</span>
-      </KpiCard>
+          </p>
+        </div>
+        <div className="min-w-[180px] max-w-md flex-1">
+          <Sparkline data={daily} />
+        </div>
+      </div>
+      <div className="grid grid-cols-1 gap-px border-t border-[var(--rpt-line)] bg-[var(--rpt-line)] sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+        <Metric
+          label="Win rate"
+          verdict={winVerdict}
+          caption={breakEven === null ? undefined : `Break-even at your win/loss size: ${fmtPercent(breakEven, 0)}`}
+          footer={`${metrics.wins}W · ${metrics.losses}L · ${metrics.breakevens}BE`}
+        >
+          {fmtPercent(metrics.winRate, 1)}
+        </Metric>
 
-      <KpiCard
-        label="Win rate"
-        verdict={winVerdict}
-        accent={<Ring value={metrics.winRate ?? 0} />}
-        caption={breakEven === null ? undefined : `Break-even at your win/loss size: ${fmtPercent(breakEven, 0)}`}
-        footer={`${metrics.wins}W · ${metrics.losses}L · ${metrics.breakevens}BE`}
-      >
-        {fmtPercent(metrics.winRate, 1)}
-      </KpiCard>
+        <Metric
+          label="Profit factor"
+          verdict={profitFactorVerdict(metrics)}
+          caption="Gross profit ÷ gross loss. Above 1 means you make money."
+          footer={<Split left={extended.grossProfit} right={Math.abs(extended.grossLoss)} />}
+        >
+          {metrics.profitFactorIsInfinite ? "∞" : metrics.profitFactor === null ? "—" : fmtNumber(metrics.profitFactor)}
+        </Metric>
 
-      <KpiCard
-        label="Profit factor"
-        verdict={profitFactorVerdict(metrics)}
-        caption="Gross profit ÷ gross loss. Above 1 means you make money."
-        footer={<Split left={extended.grossProfit} right={Math.abs(extended.grossLoss)} />}
-      >
-        {metrics.profitFactorIsInfinite ? "∞" : metrics.profitFactor === null ? "—" : fmtNumber(metrics.profitFactor)}
-      </KpiCard>
+        <Metric
+          label="Win / loss size"
+          verdict={payoffVerdict}
+          caption="Average winner relative to average loser."
+          footer={
+            <span className="flex justify-between gap-2 tabular-nums">
+              <span className="text-profit">{metrics.avgWin === null ? "—" : money(metrics.avgWin, currency)}</span>
+              <span className="text-loss">{metrics.avgLoss === null ? "—" : money(metrics.avgLoss, currency)}</span>
+            </span>
+          }
+        >
+          {winLoss === null ? "—" : `${fmtNumber(winLoss)}×`}
+        </Metric>
 
-      <KpiCard
-        label="Win / loss size"
-        verdict={payoffVerdict}
-        caption="Average winner relative to average loser."
-        footer={
-          <span className="flex justify-between gap-2">
-            <span className="text-profit">{metrics.avgWin === null ? "—" : money(metrics.avgWin, currency)}</span>
-            <span className="text-loss">{metrics.avgLoss === null ? "—" : money(metrics.avgLoss, currency)}</span>
-          </span>
-        }
-      >
-        {winLoss === null ? "—" : `${fmtNumber(winLoss)}×`}
-      </KpiCard>
+        <Metric
+          label="Expectancy"
+          verdict={expectancyVerdict}
+          caption={
+            extended.medianTrade === null ? (
+              "Average result per trade."
+            ) : (
+              <>Average per trade · median {money(extended.medianTrade, currency)}</>
+            )
+          }
+        >
+          {metrics.expectancy === null ? (
+            "—"
+          ) : (
+            <span className={pnlClass(metrics.expectancy)}>{money(metrics.expectancy, currency)}</span>
+          )}
+        </Metric>
 
-      <KpiCard
-        label="Expectancy"
-        verdict={expectancyVerdict}
-        caption={
-          extended.medianTrade === null
-            ? "Average result per trade."
-            : <>Average per trade · median {money(extended.medianTrade, currency)}</>
-        }
-      >
-        {metrics.expectancy === null ? (
-          "—"
-        ) : (
-          <span className={pnlClass(metrics.expectancy)}>{money(metrics.expectancy, currency)}</span>
-        )}
-      </KpiCard>
+        <Metric
+          label="Max drawdown"
+          caption="Largest drop from an equity peak."
+          footer={
+            <>
+              {metrics.maxDrawdownPct === null ? "" : `${fmtPercent(metrics.maxDrawdownPct, 1)} · `}
+              Recovery factor {metrics.recoveryFactor === null ? "—" : fmtNumber(metrics.recoveryFactor)}
+            </>
+          }
+        >
+          <span className="text-loss">{money(metrics.maxDrawdown, currency)}</span>
+        </Metric>
 
-      <KpiCard
-        label="Max drawdown"
-        caption="Largest drop from an equity peak."
-        footer={
-          <>
-            {metrics.maxDrawdownPct === null ? "" : `${fmtPercent(metrics.maxDrawdownPct, 1)} · `}
-            Recovery factor {metrics.recoveryFactor === null ? "—" : fmtNumber(metrics.recoveryFactor)}
-          </>
-        }
-      >
-        <span className="text-loss">{money(metrics.maxDrawdown, currency)}</span>
-      </KpiCard>
-
-      <KpiCard
-        label="Closed trades"
-        caption={`Across ${fmtNumber(metrics.tradingDays, 0)} trading day${metrics.tradingDays === 1 ? "" : "s"}`}
-        footer={
-          metrics.tradingDays > 0
-            ? `${fmtNumber(metrics.closedTrades / metrics.tradingDays, 1)} trades per day`
-            : undefined
-        }
-      >
-        {fmtNumber(metrics.closedTrades, 0)}
-      </KpiCard>
-    </div>
+        <Metric
+          label="Closed trades"
+          caption={`Across ${fmtNumber(metrics.tradingDays, 0)} trading day${metrics.tradingDays === 1 ? "" : "s"}`}
+          footer={
+            metrics.tradingDays > 0
+              ? `${fmtNumber(metrics.closedTrades / metrics.tradingDays, 1)} trades per day`
+              : undefined
+          }
+        >
+          {fmtNumber(metrics.closedTrades, 0)}
+        </Metric>
+      </div>
+    </section>
   );
 }
 
@@ -268,7 +241,7 @@ export function OutcomeDonut({ metrics }: { metrics: TradeMetrics }) {
     <div className="flex flex-wrap items-center gap-6">
       <div className="relative h-32 w-32 shrink-0">
         <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90" role="img" aria-label="Trade outcomes">
-          <circle cx="50" cy="50" r={radius} fill="none" strokeWidth="12" style={{ stroke: "var(--border, #2c2c2a)" }} />
+          <circle cx="50" cy="50" r={radius} fill="none" strokeWidth="8" style={{ stroke: "var(--rpt-line, var(--border))" }} />
           {total > 0 &&
             parts.map((part) => {
               if (part.value === 0) return null;
@@ -280,7 +253,7 @@ export function OutcomeDonut({ metrics }: { metrics: TradeMetrics }) {
                   cy="50"
                   r={radius}
                   fill="none"
-                  strokeWidth="12"
+                  strokeWidth="8"
                   strokeDasharray={`${Math.max(0, length - 1.5)} ${circumference}`}
                   strokeDashoffset={-offset}
                   style={{ stroke: part.color }}
@@ -291,17 +264,17 @@ export function OutcomeDonut({ metrics }: { metrics: TradeMetrics }) {
             })}
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-xl font-semibold tabular-nums">{total}</span>
-          <span className="text-[11px] text-muted-foreground">trades</span>
+          <span className="text-2xl font-semibold tracking-tight tabular-nums">{total}</span>
+          <span className="text-[12px] text-muted-foreground">trades</span>
         </div>
       </div>
       <ul className="space-y-2 text-sm">
         {parts.map((part) => (
           <li key={part.label} className="flex items-center gap-2">
-            <span className="h-2.5 w-2.5 rounded-full" style={{ background: part.color }} />
+            <span className="size-2 rounded-full" style={{ background: part.color }} />
             <span className="w-20 text-muted-foreground">{part.label}</span>
             <span className="tnum font-medium">{part.value}</span>
-            <span className="tnum text-xs text-muted-foreground">
+            <span className="tnum text-[13px] text-muted-foreground">
               {total > 0 ? fmtPercent(part.value / total, 0) : "—"}
             </span>
           </li>
@@ -335,13 +308,13 @@ export function PayoffBars({
     <div className="space-y-3">
       {rows.map((row) => (
         <div key={row.label}>
-          <div className="mb-1 flex justify-between text-xs">
+          <div className="mb-1.5 flex justify-between text-[13px]">
             <span className="text-muted-foreground">{row.label}</span>
             <span className="tnum font-medium">
               {row.shown === null ? "—" : money(row.shown, currency)}
             </span>
           </div>
-          <div className="h-2 overflow-hidden rounded-full bg-muted/60">
+          <div className="h-1.5 overflow-hidden rounded-full bg-muted/60">
             <div
               className="h-full rounded-full"
               style={{ width: `${(row.value / scaleAll) * 100}%`, background: row.color }}
@@ -349,7 +322,7 @@ export function PayoffBars({
           </div>
         </div>
       ))}
-      <p className="pt-1 text-xs text-muted-foreground">
+      <p className="pt-1 text-[13px] leading-relaxed text-muted-foreground">
         {extended.payoffRatio === null
           ? "Needs at least one win and one loss."
           : `You make ${fmtNumber(extended.payoffRatio)}× what you lose on an average trade. At that ratio you break even at a ${fmtPercent(extended.breakEvenWinRate, 0)} win rate.`}

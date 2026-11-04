@@ -5,7 +5,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 import { use, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { Check, Pencil, Plus, Sparkles, Trash2, X, Zap } from "lucide-react";
 import { netReturnOnEntry } from "@luxalgo/journal-core";
 import { FilterBar } from "@/components/filter-bar";
 import { Pnl } from "@/components/pnl";
@@ -583,6 +583,11 @@ function ExecutionsCard({
   const [rows, setRows] = useState<EditRow[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  /** Which execution row (if any) should grab focus when editing opens. */
+  const [focusIndex, setFocusIndex] = useState<number | null>(null);
+  /** Which price field is fetching the latest quote: an edit row index, or "close". */
+  const [pricing, setPricing] = useState<number | "close" | null>(null);
+  const [priceStatus, setPriceStatus] = useState<{ target: number | "close"; text: string; bad?: boolean } | null>(null);
   const sorted = [...executions].sort((a, b) => a.executedAt.localeCompare(b.executedAt));
   const synced = executions.some((execution) => execution.source === "sync");
   const [close, setClose] = useState<{
@@ -672,8 +677,35 @@ function ExecutionsCard({
     ]);
   };
 
-  const startEditing = () => {
+  /** Fill a price field with the latest traded price for this trade's symbol. */
+  const fillCurrentPrice = async (target: number | "close") => {
+    setPricing(target);
+    setPriceStatus(null);
+    try {
+      const response = await fetch(`/api/quote?symbol=${encodeURIComponent(trade.symbol.trim())}`);
+      const body = (await response.json()) as { price?: number; provider?: string; error?: string };
+      if (!response.ok || typeof body.price !== "number" || !(body.price > 0))
+        throw new Error(body.error ?? "Could not get a price.");
+      const value = String(body.price);
+      if (target === "close") setClose((current) => (current ? { ...current, price: value } : current));
+      else setRow(target, { price: value });
+      setPriceStatus({ target, text: `Latest ${body.provider} price filled in.` });
+    } catch (cause) {
+      setPriceStatus({
+        target,
+        text: cause instanceof Error ? cause.message : "Could not get a price.",
+        bad: true,
+      });
+    } finally {
+      setPricing(null);
+    }
+  };
+
+  const startEditing = (focus: number | null = null) => {
+    if (synced) return;
     setError("");
+    setPriceStatus(null);
+    setFocusIndex(focus);
     setClose(null);
     setRows(
       sorted.map((execution) => {
@@ -780,7 +812,7 @@ function ExecutionsCard({
             <Button
               variant="outline"
               size="sm"
-              onClick={startEditing}
+              onClick={() => startEditing()}
               disabled={synced}
               title={synced ? "Broker-synced executions can't be edited" : undefined}
             >
@@ -846,15 +878,29 @@ function ExecutionsCard({
                   value={row.quantity}
                   onChange={(event) => setRow(index, { quantity: event.target.value })}
                 />
-                <MonetaryField>
-                  <Input
-                    aria-label={`Execution ${index + 1} price`}
-                    placeholder="price"
-                    inputMode="decimal"
-                    value={row.price}
-                    onChange={(event) => setRow(index, { price: event.target.value })}
-                  />
-                </MonetaryField>
+                <div className="relative">
+                  <MonetaryField>
+                    <Input
+                      aria-label={`Execution ${index + 1} price`}
+                      placeholder="price"
+                      inputMode="decimal"
+                      className="pr-9"
+                      autoFocus={focusIndex === index}
+                      value={row.price}
+                      onChange={(event) => setRow(index, { price: event.target.value })}
+                    />
+                  </MonetaryField>
+                  <button
+                    type="button"
+                    title="Fill in the current market price"
+                    aria-label={`Use current price for execution ${index + 1}`}
+                    disabled={pricing !== null}
+                    onClick={() => void fillCurrentPrice(index)}
+                    className="absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
+                  >
+                    <Zap className={`size-3.5 ${pricing === index ? "animate-pulse" : ""}`} />
+                  </button>
+                </div>
                 <MonetaryField>
                   <Input
                     aria-label={`Execution ${index + 1} fee`}
@@ -877,6 +923,14 @@ function ExecutionsCard({
                 </Button>
               </div>
             ))}
+            {priceStatus && priceStatus.target !== "close" && (
+              <p
+                role={priceStatus.bad ? "alert" : "status"}
+                className={`text-xs ${priceStatus.bad ? "text-destructive" : "text-muted-foreground"}`}
+              >
+                Execution {priceStatus.target + 1}: {priceStatus.text}
+              </p>
+            )}
             {error && (
               <p role="alert" className="text-sm text-destructive">
                 {error}
@@ -935,17 +989,30 @@ function ExecutionsCard({
                 </label>
                 <label className="grid gap-1 text-xs text-muted-foreground">
                   Exit price
-                  <MonetaryField>
-                    <Input
-                      autoFocus
-                      inputMode="decimal"
-                      value={close.price}
-                      onChange={(event) => setClose({ ...close, price: event.target.value })}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") void submitClose();
-                      }}
-                    />
-                  </MonetaryField>
+                  <div className="relative">
+                    <MonetaryField>
+                      <Input
+                        autoFocus
+                        inputMode="decimal"
+                        className="pr-9"
+                        value={close.price}
+                        onChange={(event) => setClose({ ...close, price: event.target.value })}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") void submitClose();
+                        }}
+                      />
+                    </MonetaryField>
+                    <button
+                      type="button"
+                      title="Fill in the current market price"
+                      aria-label="Use current price for the exit"
+                      disabled={pricing !== null}
+                      onClick={() => void fillCurrentPrice("close")}
+                      className="absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
+                    >
+                      <Zap className={`size-3.5 ${pricing === "close" ? "animate-pulse" : ""}`} />
+                    </button>
+                  </div>
                 </label>
               </div>
               <div className="flex flex-wrap items-end gap-2">
@@ -975,6 +1042,14 @@ function ExecutionsCard({
                   Cancel
                 </Button>
               </div>
+              {priceStatus?.target === "close" && (
+                <p
+                  role={priceStatus.bad ? "alert" : "status"}
+                  className={`text-xs ${priceStatus.bad ? "text-destructive" : "text-muted-foreground"}`}
+                >
+                  {priceStatus.text}
+                </p>
+              )}
               <p className="text-xs text-muted-foreground">
                 Quantity starts at the full open position. Close less to scale out and keep the
                 rest open.
@@ -997,8 +1072,24 @@ function ExecutionsCard({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sorted.map((execution) => (
-                <TableRow key={execution.id}>
+              {sorted.map((execution, index) => (
+                <TableRow
+                  key={execution.id}
+                  className={synced ? undefined : "cursor-pointer"}
+                  title={synced ? undefined : "Click to edit this execution"}
+                  tabIndex={synced ? undefined : 0}
+                  onClick={synced ? undefined : () => startEditing(index)}
+                  onKeyDown={
+                    synced
+                      ? undefined
+                      : (event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            startEditing(index);
+                          }
+                        }
+                  }
+                >
                   <TableCell className="text-muted-foreground">
                     {formatTimestamp(execution.executedAt, timeZone)}
                   </TableCell>

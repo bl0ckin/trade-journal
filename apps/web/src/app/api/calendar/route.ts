@@ -1,10 +1,17 @@
-import { calendarMonthFromDays, dailyStats, dayKeyOf } from "@luxalgo/journal-core";
+import { calendarMonthFromDays, dailyStats as coreDailyStats, dayKeyOf, type RoundTrip } from "@luxalgo/journal-core";
 import { accounts, db } from "@/db";
 import { handler, ok, requireValue } from "@/server/api";
 import { getTimeZone, getCurrencyConversion } from "@/server/settings";
 import { currencyProjection } from "@/server/currency-conversion";
 import { queryTrades, readTradeFilters } from "@/server/trades-query";
 import { calendarInsights, calendarRunningPnl, calendarScope } from "@/lib/calendar-insights";
+
+/**
+ * P&L lands on the day it was sold, so a trade that closes after the visible window can still
+ * have sells inside it. Load without the date window and clip the finished days instead.
+ */
+const dailyStats = (trades: RoundTrip[], timeZone: string, scope: { from: string; to: string }) =>
+  coreDailyStats(trades, timeZone).filter((day) => day.date >= scope.from && day.date <= scope.to);
 
 /** Only compute the visible month, not every dashboard/report breakdown. */
 export const GET = handler(async (request: Request) => {
@@ -23,7 +30,7 @@ export const GET = handler(async (request: Request) => {
     "Choose a valid calendar month.",
   );
   const scope = calendarScope(readTradeFilters(params), year, month);
-  const { trades: originalTrades } = queryTrades(scope);
+  const { trades: originalTrades } = queryTrades({ ...scope, from: undefined, to: undefined });
   const selectedIds = scope.accounts?.split(",").map((id) => id.trim());
   const accountRows = db
     .select()
@@ -35,7 +42,7 @@ export const GET = handler(async (request: Request) => {
     accountRows,
     getCurrencyConversion(),
   );
-  const calendar = calendarMonthFromDays(dailyStats(trades, timeZone), year, month);
+  const calendar = calendarMonthFromDays(dailyStats(trades, timeZone, scope), year, month);
   const currencies = currencyScope.monetary
     ? [currencyScope.currency ?? "USD"]
     : currencyScope.sourceCurrencies;
@@ -51,6 +58,7 @@ export const GET = handler(async (request: Request) => {
           dailyStats(
             originalTrades.filter((trade) => ids.has(trade.accountId)),
             timeZone,
+            scope,
           ),
           year,
           month,
@@ -62,7 +70,7 @@ export const GET = handler(async (request: Request) => {
     currencyScope,
     currencyGroups,
     insights: calendarInsights(calendar),
-    runningPnl: currencyScope.monetary ? calendarRunningPnl(trades, timeZone) : {},
+    runningPnl: currencyScope.monetary ? calendarRunningPnl(trades, timeZone, scope) : {},
     timeZone,
     currencies,
     scope,

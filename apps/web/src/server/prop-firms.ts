@@ -268,7 +268,39 @@ export function mutateProp(body: Record<string, unknown>) {
         .run();
       audit("account", id, old, updated, editReason(body, old));
       const cost = body.expense as Record<string, unknown> | undefined;
-      if (!old && cost && typeof cost === "object" && String(cost.amount ?? "").trim() !== "")
+      const hasCost =
+        Boolean(cost) && typeof cost === "object" && String(cost?.amount ?? "").trim() !== "";
+      if (old && hasCost) {
+        // Editing: correct the price paid by updating the account's first recorded expense in
+        // this same save, or record one if the account has none yet.
+        const existing = db
+          .select()
+          .from(propEntries)
+          .where(
+            and(
+              eq(propEntries.accountId, id),
+              eq(propEntries.kind, "expense"),
+              eq(propEntries.voided, false),
+            ),
+          )
+          .orderBy(propEntries.occurredOn, propEntries.createdAt)
+          .limit(1)
+          .get();
+        mutateProp({
+          action: "entry.save",
+          id: existing?.id ?? newId(),
+          revision: existing?.revision ?? 0,
+          kind: "expense",
+          accountId: id,
+          firm: existing?.firm ?? values.firm,
+          currency: existing?.currency ?? code,
+          category: cost!.category ?? existing?.category ?? "evaluation",
+          amount: cost!.amount,
+          occurredOn: existing?.occurredOn ?? values.openedOn,
+          reference: existing?.reference ?? "",
+          notes: existing?.notes ?? "",
+        });
+      } else if (!old && hasCost)
         mutateProp({
           action: "entry.save",
           id: newId(),

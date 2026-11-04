@@ -237,7 +237,7 @@ function Journal() {
                   .reduce((sum, day) => sum + net(day), 0);
                 return (
                   <section key={month} aria-label={monthFormatter.format(atNoon(`${month}-01`))} className="space-y-2">
-                    <div className="flex items-baseline justify-between gap-3 px-1 pt-2">
+                    <div className="flex items-baseline justify-between gap-3 border-b border-border/60 px-1 pb-2 pt-4">
                       <h2 className="text-sm font-semibold tracking-tight">
                         {monthFormatter.format(atNoon(`${month}-01`))}
                       </h2>
@@ -293,11 +293,13 @@ function SummaryTile({
   children: ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-border/70 bg-card p-4">
-      <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
-      <p className="mt-2 text-2xl font-semibold tabular-nums leading-none tracking-tight">{children}</p>
-      {detail && <p className="mt-2 text-xs text-muted-foreground">{detail}</p>}
-    </div>
+    <Card>
+      <div className="p-4">
+        <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
+        <p className="mt-2 text-2xl font-semibold tabular-nums leading-none tracking-tight">{children}</p>
+        {detail && <p className="mt-2 text-xs text-muted-foreground">{detail}</p>}
+      </div>
+    </Card>
   );
 }
 
@@ -326,39 +328,48 @@ function DayRow({
           isToday && "border-primary/50",
         )}
       >
-        <CardContent className="flex flex-wrap items-stretch gap-x-5 gap-y-3 p-0">
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-4 p-3 sm:p-4">
           <div
             className={cn(
-              "flex w-full shrink-0 items-center gap-3 border-l-4 px-4 py-3 sm:w-36 sm:flex-col sm:items-start sm:gap-0",
+              "journal-day-tile",
               !hasTrades
-                ? "border-l-transparent"
+                ? "bg-muted/60 text-muted-foreground"
                 : pnl > 0
-                  ? "border-l-profit"
+                  ? "bg-profit/10 text-profit"
                   : pnl < 0
-                    ? "border-l-loss"
-                    : "border-l-muted-foreground/40",
+                    ? "bg-loss/10 text-loss"
+                    : "bg-muted/60 text-muted-foreground",
             )}
           >
-            <div className="text-2xl font-semibold tabular-nums leading-none">{Number(day.date.slice(8))}</div>
-            <div className="text-xs text-muted-foreground sm:mt-1">
+            <span className="text-xl font-semibold tabular-nums">{Number(day.date.slice(8))}</span>
+            <span className="mt-1 text-[10px] font-medium uppercase tracking-wide">
               {weekdayFormatter.format(atNoon(day.date))}
-              {isToday && <span className="ml-1.5 font-medium text-primary">Today</span>}
-            </div>
+            </span>
           </div>
 
-          <div className="flex min-w-0 flex-1 flex-col justify-center gap-1.5 py-3 pr-4 sm:pr-0">
+          <div className="flex min-w-0 flex-col gap-1.5">
             {hasTrades && stats ? (
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-                <Pnl value={pnl} className="min-w-24 text-base font-semibold" />
-                <span className="text-muted-foreground">
-                  {stats.trades} trade{stats.trades === 1 ? "" : "s"}
-                </span>
-                <span className="text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-sm">
+                <Pnl value={pnl} className="text-base font-semibold" />
+                {isToday && (
+                  <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                    Today
+                  </span>
+                )}
+                <span className="text-xs text-muted-foreground">
+                  {stats.trades} trade{stats.trades === 1 ? "" : "s"} ·{" "}
                   {decided > 0 ? fmtPercent(stats.wins / decided, 0) : "—"} win · {stats.wins}W / {stats.losses}L
                 </span>
               </div>
             ) : (
-              <span className="text-sm text-muted-foreground">No trades</span>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                No trades
+                {isToday && (
+                  <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                    Today
+                  </span>
+                )}
+              </div>
             )}
             {hasTrades && (
               <div className="h-1 w-full max-w-xs overflow-hidden rounded-full bg-muted/60" aria-hidden>
@@ -371,20 +382,20 @@ function DayRow({
             {preview && <p className="line-clamp-2 max-w-2xl text-xs leading-relaxed text-muted-foreground">{preview}</p>}
           </div>
 
-          <div className="flex items-center px-4 py-3 sm:pl-0">
+          <div className="flex items-center">
             {day.hasNote ? (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/60 px-2.5 py-1 text-xs text-muted-foreground">
                 <NotebookPen className="size-3.5" aria-hidden />
-                Note
+                <span className="hidden sm:inline">Note</span>
               </span>
             ) : hasTrades ? (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-dashed px-2.5 py-1 text-xs text-muted-foreground transition-colors group-hover:border-primary/60 group-hover:text-primary">
                 <PenLine className="size-3.5" aria-hidden />
-                Add note
+                <span className="hidden sm:inline">Add note</span>
               </span>
             ) : null}
           </div>
-        </CardContent>
+        </div>
       </Card>
     </Link>
   );

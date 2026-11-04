@@ -9,6 +9,7 @@ import {
 } from "@/lib/market-data";
 import type { TradePoint } from "@/lib/trade-explorer";
 import { providerInfo } from "@/lib/market-providers";
+import { autoMarketTarget, pickResolution } from "@/lib/market-routing";
 import { useApi } from "@/lib/use-api";
 import { Button } from "./ui/button";
 import { OptionSelect } from "./ui/option-select";
@@ -24,10 +25,12 @@ export function ReportMarketEstimates({
 }) {
   const { data } = useApi<{ connections: MarketConnection[] }>("/api/market-data/connections");
   const available = data?.connections.filter((item) => item.configured) ?? [];
-  const [provider, setProvider] = useState("");
+  // "auto" routes each trade by its own ticker: Binance/Coinbase for crypto, Alpaca for stocks.
+  const [provider, setProvider] = useState("auto");
   const [dataset, setDataset] = useState("");
-  const [resolution, setResolution] = useState<Resolution>("1m");
-  const info = providerInfo(provider);
+  const [resolution, setResolution] = useState<Resolution | "auto">("auto");
+  const automatic = provider === "auto";
+  const info = automatic ? undefined : providerInfo(provider);
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
@@ -36,7 +39,11 @@ export function ReportMarketEstimates({
   useEffect(() => () => controller.current?.abort(), []);
   const missing = points.filter((point) => point.mae === null || point.mfe === null);
   const calculate = async () => {
-    if (!available.some((item) => item.id === provider) || (info?.datasets && !dataset)) return;
+    if (
+      !automatic &&
+      (!available.some((item) => item.id === provider) || (info?.datasets && !dataset))
+    )
+      return;
     const request = new AbortController();
     controller.current = request;
     setBusy(true);
@@ -51,14 +58,28 @@ export function ReportMarketEstimates({
         if (request.signal.aborted) break;
         setStatus(`Calculating ${completed + 1} of ${missing.length} · ${point.symbol}`);
         try {
+          const opened = new Date(
+            Date.parse(point.closedAt) - (point.durationMinutes ?? 0) * 60_000,
+          ).toISOString();
+          const target = automatic
+            ? autoMarketTarget(
+                point.symbol,
+                null,
+                available.map((item) => item.id),
+              )
+            : { provider, symbol: point.symbol, dataset };
+          if (!target)
+            throw new Error(
+              "No connected provider covers this ticker automatically. Open the trade to load it by hand.",
+            );
           const response = await fetch(`/api/trades/${encodeURIComponent(point.key)}/market-data`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              provider,
-              symbol: point.symbol,
-              resolution,
-              dataset,
+              provider: target.provider,
+              symbol: target.symbol,
+              resolution: resolution === "auto" ? pickResolution(opened, point.closedAt) : resolution,
+              dataset: target.dataset,
               basisConfirmed: true,
               estimateOnly: true,
             }),
@@ -106,8 +127,10 @@ export function ReportMarketEstimates({
           <summary className="cursor-pointer text-sm">Calculate missing estimates</summary>
           <div className="mt-3 space-y-3">
             <p className="text-xs text-muted-foreground">
-              Loads {resolution} candles for this selection using each trade’s recorded symbol. This
-              uses your provider allowance and may take several minutes. For custom symbols or a
+              {automatic
+                ? "Picks a connected provider for each trade from its ticker (Binance or Coinbase for crypto, Alpaca for stocks) and a candle size that fits the trade."
+                : `Loads ${resolution === "auto" ? "automatically sized" : resolution} candles using each trade’s recorded symbol.`}{" "}
+              This uses your provider allowance and may take several minutes. For custom symbols or a
               specific CSV dataset, load and save estimates from the individual trade.
             </p>
             {available.length ? (
@@ -122,9 +145,7 @@ export function ReportMarketEstimates({
                     setConfirmed(false);
                   }}
                 >
-                  <option value="" disabled>
-                    Choose a data source
-                  </option>
+                  <option value="auto">Automatic (by ticker)</option>
                   {available.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name}
@@ -135,8 +156,9 @@ export function ReportMarketEstimates({
                   aria-label="Estimate candle resolution"
                   disabled={busy}
                   value={resolution}
-                  onValueChange={(value) => setResolution(value as Resolution)}
+                  onValueChange={(value) => setResolution(value as Resolution | "auto")}
                 >
+                  <option value="auto">Automatic candle size</option>
                   {Object.keys(RESOLUTIONS).map((value) => (
                     <option key={value} value={value}>
                       {value}
@@ -160,7 +182,7 @@ export function ReportMarketEstimates({
                     ))}
                   </OptionSelect>
                 )}
-                <p className="text-xs text-muted-foreground">{info?.symbolHint}</p>
+                {info && <p className="text-xs text-muted-foreground">{info.symbolHint}</p>}
                 <label className="flex items-start gap-2 text-xs text-muted-foreground">
                   <input
                     type="checkbox"
@@ -181,7 +203,7 @@ export function ReportMarketEstimates({
                     busy ||
                     !confirmed ||
                     currencies.length !== 1 ||
-                    !available.some((item) => item.id === provider) ||
+                    (!automatic && !available.some((item) => item.id === provider)) ||
                     Boolean(info?.datasets && !dataset)
                   }
                   onClick={() => void calculate()}

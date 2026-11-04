@@ -125,7 +125,7 @@ function CalendarWeekRow({
     <>
       {week.days.map((day, dayIndex) => {
         if (!day) return <div key={dayIndex} className="journal-calendar-day rounded-md" />;
-        const traded = day.trades > 0;
+        const traded = day.trades > 0 || day.netPnl !== 0;
         const intensity = traded ? 0.1 + 0.38 * (Math.abs(day.netPnl) / maxAbs) : 0;
         const performance = !monetary
           ? "neutral"

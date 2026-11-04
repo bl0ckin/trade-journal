@@ -90,7 +90,7 @@ function MonthGrid({
   return (
     <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
       {year.months.map((m) => {
-        const traded = m.trades > 0;
+        const traded = m.trades > 0 || m.netPnl !== 0;
         const key = `${year.year}-${String(m.month).padStart(2, "0")}`;
         const isCurrent = key === todayKey;
         const isFuture = key > todayKey;
@@ -204,7 +204,7 @@ function MonthlyColumns({ months, currency }: { months: YearMonth[]; currency: s
 function YearToDate({ months, currency }: { months: YearMonth[]; currency: string }) {
   let last = -1;
   months.forEach((m, index) => {
-    if (m.trades > 0) last = index;
+    if (m.trades > 0 || m.netPnl !== 0) last = index;
   });
   const points = months.slice(0, last + 1);
   if (points.length < 2)

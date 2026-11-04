@@ -1,10 +1,14 @@
-import { dailyStats, dayKeyOf } from "@luxalgo/journal-core";
+import { dailyStats as coreDailyStats, dayKeyOf, type RoundTrip } from "@luxalgo/journal-core";
 import { accounts, db } from "@/db";
 import { handler, ok, requireValue } from "@/server/api";
 import { getTimeZone, getCurrencyConversion } from "@/server/settings";
 import { currencyProjection } from "@/server/currency-conversion";
 import { queryTrades, readTradeFilters } from "@/server/trades-query";
 import { calendarYearFromDays, yearScope } from "@/lib/calendar-year";
+
+/** Sells decide the day, so load without the date window and clip the finished days instead. */
+const dailyStats = (trades: RoundTrip[], timeZone: string, scope: { from: string; to: string }) =>
+  coreDailyStats(trades, timeZone).filter((day) => day.date >= scope.from && day.date <= scope.to);
 
 /** Twelve months of closed-trade P&L for the yearly calendar view. */
 export const GET = handler(async (request: Request) => {
@@ -17,7 +21,7 @@ export const GET = handler(async (request: Request) => {
     "Choose a valid calendar year.",
   );
   const scope = yearScope(readTradeFilters(params), year);
-  const { trades: originalTrades } = queryTrades(scope);
+  const { trades: originalTrades } = queryTrades({ ...scope, from: undefined, to: undefined });
   const selectedIds = scope.accounts?.split(",").map((id) => id.trim());
   const accountRows = db
     .select()
@@ -44,13 +48,14 @@ export const GET = handler(async (request: Request) => {
             dailyStats(
               originalTrades.filter((trade) => ids.has(trade.accountId)),
               timeZone,
+              scope,
             ),
             year,
           ),
         };
       });
   return ok({
-    year: calendarYearFromDays(dailyStats(trades, timeZone), year),
+    year: calendarYearFromDays(dailyStats(trades, timeZone, scope), year),
     currencyScope,
     currencyGroups,
     timeZone,

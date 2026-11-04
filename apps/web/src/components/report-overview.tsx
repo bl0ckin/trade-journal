@@ -12,11 +12,16 @@ import { KpiStrip, OutcomeDonut, PayoffBars } from "./report-kpis";
 import {
   BarList,
   DrawdownArea,
+  DurationTiles,
+  MarketShare,
   MonthlyTable,
+  PanelGroup,
   PnlHistogram,
   SectionHeading,
   Segmented,
+  SymbolLeaderboard,
   TopTrades,
+  WeekdayColumns,
   type BarRow,
 } from "./report-charts";
 import { ReportInsights } from "./report-insights";
@@ -100,19 +105,21 @@ export function ReportOverview({ query, filters }: { query: string; filters: Ana
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight">Performance overview</h2>
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="rounded-full border border-border/70 bg-muted/40 px-2 py-0.5">{range}</span>
-            {metrics && metrics.closedTrades > 0 && (
-              <span className="rounded-full border border-border/70 bg-muted/40 px-2 py-0.5">
-                {metrics.closedTrades} closed trade{metrics.closedTrades === 1 ? "" : "s"}
-              </span>
-            )}
-            <span className="rounded-full border border-border/70 bg-muted/40 px-2 py-0.5">{currency}</span>
-            <span className="rounded-full border border-border/70 bg-muted/40 px-2 py-0.5">{data.timeZone}</span>
-          </div>
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+        <div className="min-w-0">
+          <h2 className="text-2xl font-semibold tracking-tight">Performance overview</h2>
+          <p className="mt-1.5 text-[13px] text-muted-foreground tabular-nums">
+            {[
+              range,
+              metrics && metrics.closedTrades > 0
+                ? `${metrics.closedTrades} closed trade${metrics.closedTrades === 1 ? "" : "s"}`
+                : null,
+              currency,
+              data.timeZone,
+            ]
+              .filter(Boolean)
+              .join("  ·  ")}
+          </p>
         </div>
         <ReviewExport
           containsFinancialData
@@ -157,9 +164,9 @@ export function ReportOverview({ query, filters }: { query: string; filters: Ana
       </div>
 
       {!metrics || !extended || metrics.closedTrades === 0 ? (
-        <div className="rounded-xl border border-dashed p-10 text-center">
-          <p className="text-sm font-medium">No closed trades in this range</p>
-          <p className="mt-1 text-xs text-muted-foreground">
+        <div className="rounded-[10px] border border-dashed border-[var(--rpt-line-strong)] p-12 text-center">
+          <p className="text-[15px] font-medium">No closed trades in this range</p>
+          <p className="mt-1.5 text-[13px] text-muted-foreground">
             Close a trade, change the filters, or widen the date range to see your report.
           </p>
         </div>
@@ -198,117 +205,83 @@ export function ReportOverview({ query, filters }: { query: string; filters: Ana
           />
           <PerformanceOverTime data={data} currency={currency} />
 
-          <div className="grid gap-3 lg:grid-cols-3">
-            <Card>
-              <CardHeader>
-                <CardTitle>Trade outcomes</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <OutcomeDonut metrics={metrics} />
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>Win and loss size</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <PayoffBars metrics={metrics} extended={extended} currency={currency} />
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>Long vs short</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <BarList rows={rows("direction")} currency={currency} />
-              </CardContent>
-            </Card>
-          </div>
+          <PanelGroup
+            className="lg:grid-cols-3"
+            panels={[
+              { title: "Trade outcomes", content: <OutcomeDonut metrics={metrics} /> },
+              {
+                title: "Win and loss size",
+                content: <PayoffBars metrics={metrics} extended={extended} currency={currency} />,
+              },
+              { title: "Long vs short", content: <BarList rows={rows("direction")} currency={currency} /> },
+            ]}
+          />
 
-          <div className="grid gap-3 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Trade P&L distribution</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <PnlHistogram bins={extended.histogram} currency={currency} />
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>Best and worst trades</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
-                <div>
-                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-profit">Best</p>
-                  <TopTrades trades={extended.topWins} currency={currency} empty="No winning trades." />
-                </div>
-                <div>
-                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-loss">Worst</p>
-                  <TopTrades trades={extended.topLosses} currency={currency} empty="No losing trades." />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          <PanelGroup
+            className="lg:grid-cols-2"
+            panels={[
+              {
+                title: "Trade P&L distribution",
+                content: <PnlHistogram bins={extended.histogram} currency={currency} />,
+              },
+              {
+                title: "Best and worst trades",
+                content: (
+                  <div className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
+                    <div>
+                      <p className="mb-1 text-[13px] font-medium text-profit">Best trades</p>
+                      <TopTrades trades={extended.topWins} currency={currency} empty="No winning trades." />
+                    </div>
+                    <div>
+                      <p className="mb-1 text-[13px] font-medium text-loss">Worst trades</p>
+                      <TopTrades trades={extended.topLosses} currency={currency} empty="No losing trades." />
+                    </div>
+                  </div>
+                ),
+              },
+            ]}
+          />
 
           <SectionHeading id="timing" title="When you trade" hint="Based on trade opening times" />
-          <div className="grid gap-3 lg:grid-cols-2">
-            <Card className="lg:col-span-2">
-              <CardHeader>
-                <CardTitle>Time of day</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <TimeHeatmap hours={data.buckets.hour} currency={currency} />
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>Day of week</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <BarList rows={rows("weekday", weekdayOrder)} currency={currency} />
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>Holding time</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <BarList rows={rows("duration")} currency={currency} />
-              </CardContent>
-            </Card>
-          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Time of day</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <TimeHeatmap hours={data.buckets.hour} currency={currency} />
+            </CardContent>
+          </Card>
+          <PanelGroup
+            className="lg:grid-cols-2"
+            panels={[
+              { title: "Day of week", content: <WeekdayColumns rows={rows("weekday", weekdayOrder)} currency={currency} /> },
+              { title: "Holding time", content: <DurationTiles rows={rows("duration")} currency={currency} /> },
+            ]}
+          />
 
           <SectionHeading id="markets" title="What you trade" hint="Where your money is made and lost" />
-          <div className="grid gap-3 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>By symbol</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <BarList rows={rows("symbol")} currency={currency} limit={10} />
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>By market</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <BarList
-                  rows={data.markets.map((m) => ({
-                    key: m.key,
-                    label: m.label,
-                    netPnl: m.netPnl,
-                    trades: m.trades,
-                    winRate: m.winRate,
-                  }))}
-                  currency={currency}
-                  empty="No closed trades yet."
-                  limit={8}
-                />
-              </CardContent>
-            </Card>
-          </div>
+          <PanelGroup
+            className="lg:grid-cols-2"
+            panels={[
+              { title: "By symbol", content: <SymbolLeaderboard rows={rows("symbol")} currency={currency} limit={8} /> },
+              {
+                title: "By market",
+                content: (
+                  <MarketShare
+                    rows={data.markets.map((m) => ({
+                      key: m.key,
+                      label: m.label,
+                      netPnl: m.netPnl,
+                      trades: m.trades,
+                      winRate: m.winRate,
+                    }))}
+                    currency={currency}
+                    empty="No closed trades yet."
+                  />
+                ),
+              },
+            ]}
+          />
 
           <SectionHeading id="consistency" title="Consistency" hint="Month by month" />
           <Card>
@@ -322,72 +295,64 @@ export function ReportOverview({ query, filters }: { query: string; filters: Ana
             title="Strategy and discipline"
             hint="Annotate trades with playbooks, tags and mistakes to unlock these"
           />
-          <div className="grid gap-3 lg:grid-cols-3">
-            {(
+          <PanelGroup
+            className="lg:grid-cols-3"
+            panels={(
               [
                 ["playbook", "Playbooks", "Assign a playbook to a trade to see how each setup performs."],
                 ["tag", "Tags", "Tag your trades to compare setups and conditions."],
                 ["mistake", "Mistakes", "Log mistakes on trades to see what they cost you."],
               ] as const
-            ).map(([key, title, empty]) => (
-              <Card key={key}>
-                <CardHeader>
-                  <CardTitle>{title}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <BarList rows={rows(key)} currency={currency} empty={empty} limit={8} />
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+            ).map(([key, title, empty]) => ({
+              title,
+              content: <BarList rows={rows(key)} currency={currency} empty={empty} limit={8} />,
+            }))}
+          />
 
           <SectionHeading
             title="Psychology"
             hint="From the quality, confidence and emotional state you log on trades"
           />
           {data.psychology && data.psychology.tagged > 0 ? (
-            <div className="grid gap-3 lg:grid-cols-3">
-              {(
+            <PanelGroup
+              className="lg:grid-cols-3"
+              panels={(
                 [
                   ["Emotional state", data.psychology.emotions],
                   ["Trade quality", data.psychology.quality],
                   ["Confidence", data.psychology.confidence],
                 ] as const
-              ).map(([title, buckets]) => (
-                <Card key={title}>
-                  <CardHeader>
-                    <CardTitle>{title}</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <BarList
-                      rows={buckets.map((b) => ({
-                        key: b.key,
-                        label: b.label,
-                        netPnl: b.netPnl,
-                        trades: b.trades,
-                        winRate: b.winRate,
-                      }))}
-                      currency={currency}
-                      empty="Not logged on any of these trades yet."
-                      limit={8}
-                    />
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+              ).map(([title, buckets]) => ({
+                title,
+                content: (
+                  <BarList
+                    rows={buckets.map((b) => ({
+                      key: b.key,
+                      label: b.label,
+                      netPnl: b.netPnl,
+                      trades: b.trades,
+                      winRate: b.winRate,
+                    }))}
+                    currency={currency}
+                    empty="Not logged on any of these trades yet."
+                    limit={8}
+                  />
+                ),
+              }))}
+            />
           ) : (
-            <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+            <p className="rounded-[10px] border border-dashed border-[var(--rpt-line-strong)] p-6 text-center text-[13px] text-muted-foreground">
               Log a trade quality, confidence and emotional state on your trades to see how your
               mindset affects your results.
             </p>
           )}
 
           <SectionHeading id="statistics" title="All statistics" hint="Hover a figure for its definition" />
-          <details className="group rounded-xl border border-border/70 bg-card/40 open:bg-transparent">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-colors hover:bg-accent/30 [&::-webkit-details-marker]:hidden">
+          <details className="group rounded-[10px] border border-[var(--rpt-line)] bg-card open:bg-transparent open:border-transparent">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-[10px] px-5 py-3.5 text-[14px] font-medium transition-colors hover:bg-foreground/[0.03] [&::-webkit-details-marker]:hidden">
               <span>
                 Full statistics
-                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                <span className="ml-3 text-[13px] font-normal text-muted-foreground">
                   Performance, wins and losses, risk, holding time and days
                 </span>
               </span>
@@ -396,7 +361,7 @@ export function ReportOverview({ query, filters }: { query: string; filters: Ana
                 aria-hidden
               />
             </summary>
-            <div className="p-3 pt-1">
+            <div className="pt-2">
               <ReportStatistics
                 metrics={data.metrics}
                 extended={data.extended}
@@ -407,7 +372,7 @@ export function ReportOverview({ query, filters }: { query: string; filters: Ana
           </details>
         </>
       )}
-      <p className="rounded-lg border border-border/60 bg-muted/20 p-3 text-xs leading-relaxed text-muted-foreground">
+      <p className="max-w-4xl pt-4 text-[12px] leading-relaxed text-muted-foreground">
         Weekday and hour use trade opening times. Win rates and statistics use closed trades. Tags
         and mistakes can overlap, so their totals can add up to more than your overall result. By
         symbol shows the top 20 by net P&L; Breakdowns includes every symbol and more metrics.
@@ -470,16 +435,17 @@ function SectionNav() {
     document.getElementById(id)?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
   };
   return (
-    <nav aria-label="Jump to section" className="flex gap-1.5 overflow-x-auto pb-1">
-      <span className="flex shrink-0 items-center pr-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        Jump to
-      </span>
+    <nav
+      aria-label="Jump to section"
+      className="flex items-baseline gap-5 overflow-x-auto overflow-y-hidden pt-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    >
+      <span className="shrink-0 text-[13px] text-muted-foreground">On this page</span>
       {NAV.map(([id, label]) => (
         <button
           key={id}
           type="button"
           onClick={() => jump(id)}
-          className="shrink-0 rounded-full border border-border/70 bg-card px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+          className="shrink-0 text-[13px] font-medium text-foreground/80 underline decoration-transparent underline-offset-4 transition-colors hover:text-foreground hover:decoration-border"
         >
           {label}
         </button>

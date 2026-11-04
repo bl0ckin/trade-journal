@@ -166,5 +166,11 @@ export function estimateExcursions(
   );
   if (![minimum, maximum].every(Number.isFinite))
     return empty("The position values exceed the supported numeric range.");
-  return { mae: Math.abs(minimum), mfe: maximum, sampledBars, excludedBars, warnings };
+  return {
+    mae: Math.abs(minimum),
+    mfe: maximum,
+    sampledBars,
+    excludedBars,
+    warnings,
+  };
 }

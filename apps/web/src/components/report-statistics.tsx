@@ -35,26 +35,30 @@ function Group({ title, tiles }: { title: string; tiles: Tile[] }) {
         <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent>
-        <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+        <dl className="grid gap-x-12 sm:grid-cols-2 xl:grid-cols-3">
           {tiles.map((tile) => (
             <div
               key={tile.label}
               title={tile.hint}
-              className={`min-w-0 rounded-lg bg-muted/30 px-3 py-2.5 ${tile.hint ? "cursor-help" : ""}`}
+              className={`flex min-w-0 items-baseline justify-between gap-4 border-b border-[var(--rpt-line)] py-3 ${tile.hint ? "cursor-help" : ""}`}
             >
-              <dt className="flex items-center gap-1 text-xs text-muted-foreground">
+              <dt className="flex shrink-0 items-center gap-1.5 text-[13px] text-muted-foreground">
                 {tile.label}
                 {tile.hint && (
                   <span
                     aria-hidden
-                    className="inline-flex size-3.5 items-center justify-center rounded-full border border-border text-[9px] leading-none"
+                    className="inline-flex size-3.5 items-center justify-center rounded-full border border-[var(--rpt-line-strong)] text-[9px] leading-none"
                   >
                     ?
                   </span>
                 )}
               </dt>
-              <dd className="mt-1 break-words text-base font-semibold tabular-nums">{tile.value}</dd>
-              {tile.sub && <div className="mt-0.5 text-xs text-muted-foreground">{tile.sub}</div>}
+              <dd className="min-w-0 break-words text-right text-[14px] font-medium tabular-nums">
+                {tile.value}
+                {tile.sub && (
+                  <div className="mt-0.5 text-[12px] font-normal text-muted-foreground">{tile.sub}</div>
+                )}
+              </dd>
             </div>
           ))}
         </dl>
@@ -78,7 +82,7 @@ export function ReportStatistics({
   if (!metrics || !extended) return null;
   if (metrics.closedTrades === 0)
     return (
-      <p className="rounded-lg border p-4 text-sm text-muted-foreground">
+      <p className="rounded-[10px] border border-[var(--rpt-line)] p-4 text-[13px] text-muted-foreground">
         Statistics appear once you have closed trades in the selected range.
       </p>
     );
@@ -239,7 +243,7 @@ export function ReportStatistics({
   ];
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {groups.map((group) => (
         <Group key={group.title} title={group.title} tiles={group.tiles} />
       ))}

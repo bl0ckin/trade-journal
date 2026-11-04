@@ -176,10 +176,10 @@ export function TradeExplorer({ query }: { query: string }) {
   return (
     <section className="space-y-4" aria-labelledby="trade-explorer-title" data-trade-explorer>
       <div>
-        <h2 id="trade-explorer-title" className="text-lg font-semibold">
+        <h2 id="trade-explorer-title" className="text-2xl font-semibold tracking-tight">
           Trade explorer
         </h2>
-        <p className="mt-1 text-xs text-muted-foreground">
+        <p className="mt-1.5 text-[13px] text-muted-foreground">
           Compare individual trades, not group averages · Active account and filters ·{" "}
           {data.timeZone}
         </p>

@@ -69,10 +69,10 @@ export function PerformanceTrendsReport({ query }: { query: string }) {
       data-performance-trends
     >
       <div>
-        <h2 id="performance-trends-title" className="text-lg font-semibold">
+        <h2 id="performance-trends-title" className="text-2xl font-semibold tracking-tight">
           Performance trends
         </h2>
-        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+        <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
           {trends.count} closed trades · Active account and filters · Closing order · {timeZone}
           {monetary && trends.count > 0 ? ` · ${currency}` : ""}
         </p>
@@ -107,7 +107,7 @@ export function PerformanceTrendsReport({ query }: { query: string }) {
                 <Card key={metric} className="min-w-0 overflow-hidden">
                   <CardHeader>
                     <CardTitle>{rate ? "Win-rate trend" : "Average trade P&L trend"}</CardTitle>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-[13px] text-muted-foreground">
                       Last 20 closed trades at each point
                       {rate ? " · Breakevens included" : " · After fees"}
                     </p>
@@ -115,8 +115,8 @@ export function PerformanceTrendsReport({ query }: { query: string }) {
                   <CardContent className="space-y-4">
                     <div className="flex flex-wrap items-end justify-between gap-3">
                       <div>
-                        <p className="text-xs text-muted-foreground">Latest full window</p>
-                        <p className="mt-1 text-2xl font-semibold tabular-nums">
+                        <p className="text-[13px] text-muted-foreground">Latest full window</p>
+                        <p className="mt-1.5 text-[32px] font-semibold leading-none tracking-tight tabular-nums">
                           {latest ? (
                             rate ? (
                               fmtPercent(latest.winRate, 1)
@@ -128,9 +128,9 @@ export function PerformanceTrendsReport({ query }: { query: string }) {
                           )}
                         </p>
                       </div>
-                      <div className="text-right text-xs text-muted-foreground">
+                      <div className="text-right text-[13px] text-muted-foreground">
                         <p>Selected-period {rate ? "win rate" : "average"}</p>
-                        <p className="mt-1 text-sm tabular-nums">
+                        <p className="mt-1.5 text-[15px] font-medium tabular-nums">
                           {rate ? (
                             fmtPercent(reference, 1)
                           ) : (
@@ -148,7 +148,7 @@ export function PerformanceTrendsReport({ query }: { query: string }) {
                           currency={currency}
                           timeZone={timeZone}
                         />
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-[12px] text-muted-foreground">
                           Closed-trade sequence · Dashed line: selected-period{" "}
                           {rate ? "win rate" : "average"}
                         </p>
@@ -169,7 +169,7 @@ export function PerformanceTrendsReport({ query }: { query: string }) {
             <Card className="min-w-0">
               <CardHeader>
                 <CardTitle>Largest winning and losing trade</CardTitle>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-[13px] text-muted-foreground">
                   Individual closed trades, after fees—not daily totals. Uses your journal’s
                   win/loss classification.
                 </p>
@@ -181,11 +181,11 @@ export function PerformanceTrendsReport({ query }: { query: string }) {
                     ["Largest loser", trends.largestLoss],
                   ] as const
                 ).map(([label, trade]) => (
-                  <div key={label} className="min-w-0 rounded-lg border p-4">
-                    <h3 className="text-xs text-muted-foreground">{label}</h3>
+                  <div key={label} className="min-w-0 rounded-lg border border-[var(--rpt-line)] p-5">
+                    <h3 className="text-[13px] text-muted-foreground">{label}</h3>
                     {trade ? (
                       <>
-                        <p className="mt-2 text-xl font-semibold">
+                        <p className="mt-2 text-2xl font-semibold tracking-tight">
                           <Pnl value={trade.netPnl} currency={currency} />
                         </p>
                         <Link
@@ -213,10 +213,10 @@ export function PerformanceTrendsReport({ query }: { query: string }) {
           )}
           {latest && (
             <details
-              className="rounded-xl border bg-card"
+              className="rounded-[10px] border border-[var(--rpt-line)] bg-card"
               onToggle={(event) => setTableOpen(event.currentTarget.open)}
             >
-              <summary className="cursor-pointer rounded-xl px-4 py-3 text-sm font-medium">
+              <summary className="cursor-pointer rounded-[10px] px-5 py-3.5 text-[14px] font-medium transition-colors hover:bg-foreground/[0.03]">
                 Explore window values and trades
               </summary>
               {tableOpen && (
@@ -270,7 +270,7 @@ export function PerformanceTrendsReport({ query }: { query: string }) {
               )}
             </details>
           )}
-          <p className="text-xs leading-relaxed text-muted-foreground">
+          <p className="max-w-4xl text-[12px] leading-relaxed text-muted-foreground">
             Only trades within your selection are used; earlier trades are not borrowed to fill a
             window. Rolling windows overlap and describe recent results—not a forecast. Small
             samples can change sharply.

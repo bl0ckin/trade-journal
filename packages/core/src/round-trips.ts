@@ -243,7 +243,12 @@ export const buildRoundTrips = (
           feeRemaining -= feeShare;
           cycle.exitQuantity += exitQty;
           cycle.exitNotional += exitNotional;
-          cycle.exits.push({ executionId: execution.id, grossPnl: chunkGross, quantity: exitQty });
+          cycle.exits.push({
+            executionId: execution.id,
+            grossPnl: chunkGross,
+            quantity: exitQty,
+            executedAt: execution.executedAt,
+          });
 
           signedQty += cycle.direction === "long" ? exitQty : -exitQty;
 
