@@ -28,7 +28,7 @@ export function TradeMarketData({
   trade,
   executions,
 }: {
-  trade: ChartTrade & { currency: string };
+  trade: ChartTrade & { currency: string; accountId?: string };
   executions: ChartExecution[];
 }) {
   const privacy = usePrivacy();
@@ -38,6 +38,11 @@ export function TradeMarketData({
   const { data: connections, error: connectionError } = useApi<{ connections: MarketConnection[] }>(
     "/api/market-data/connections",
   );
+  // The account's broker decides how a bare coin name (a synced Hyperliquid "BTC") is routed.
+  const { data: accountList } = useApi<{ accounts: { id: string; broker: string }[] }>(
+    "/api/accounts?summary=1",
+  );
+  const broker = accountList?.accounts.find((item) => item.id === trade.accountId)?.broker ?? null;
   const available = connections?.connections.filter((connection) => connection.configured) ?? [];
   const [provider, setProvider] = useState("");
   const [symbol, setSymbol] = useState(trade.symbol);
@@ -113,11 +118,12 @@ export function TradeMarketData({
   const autoTried = useRef(false);
   const [autoLoaded, setAutoLoaded] = useState<{ label: string; provider: string } | null>(null);
   useEffect(() => {
-    if (autoTried.current || !connections) return;
+    if (autoTried.current || !connections || !accountList) return;
     const target = autoMarketTarget(
       trade.symbol,
       trade.assetClass,
       available.map((item) => item.id),
+      broker,
     );
     if (!target) return;
     autoTried.current = true;
@@ -133,7 +139,7 @@ export function TradeMarketData({
     });
     void load({ ...target, resolution: chosen });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connections, trade.closedAt, trade.symbol]);
+  }, [connections, accountList, trade.closedAt, trade.symbol]);
 
   return (
     // The chart comes first; the market data controls and estimates sit underneath it.

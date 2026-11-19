@@ -4,6 +4,7 @@ export type TradeXAxis = "durationMinutes" | "entryMinute" | "mae" | "mfe";
 export type TradeYAxis = "netPnl" | "realizedR" | "mae" | "mfe";
 export interface TradePoint {
   key: string;
+  accountId?: string;
   symbol: string;
   direction: string;
   closedAt: string;
@@ -34,6 +35,7 @@ export function tradeExplorerPoints(trades: AnnotatedTrade[], timeZone: string):
         : null;
       return {
         key: trade.key,
+        accountId: trade.accountId,
         symbol: trade.symbol,
         direction: trade.direction,
         closedAt: trade.closedAt!,

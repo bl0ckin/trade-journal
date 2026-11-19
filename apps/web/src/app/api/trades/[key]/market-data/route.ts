@@ -65,7 +65,13 @@ export const POST = handler(
     );
     try {
       const provider = providerFor(body.provider);
-      if (["binance", "coinbase"].includes(provider.id))
+      const broker = db
+        .select({ broker: accounts.broker })
+        .from(accounts)
+        .where(eq(accounts.id, row.accountId))
+        .get()?.broker;
+      // Hyperliquid perps may be tagged futures by sync; their coins are still crypto.
+      if (["binance", "coinbase"].includes(provider.id) && broker !== "hyperliquid")
         requireValue(
           row.assetClass == null || row.assetClass === "crypto",
           "This provider supplies spot crypto candles only. Choose a crypto trade.",

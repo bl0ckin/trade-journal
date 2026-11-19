@@ -24,6 +24,11 @@ export function ReportMarketEstimates({
   onComplete: () => void;
 }) {
   const { data } = useApi<{ connections: MarketConnection[] }>("/api/market-data/connections");
+  // Each account's broker decides how bare coin names (synced Hyperliquid "BTC") are routed.
+  const { data: accountList } = useApi<{ accounts: { id: string; broker: string }[] }>(
+    "/api/accounts?summary=1",
+  );
+  const brokers = new Map((accountList?.accounts ?? []).map((item) => [item.id, item.broker]));
   const available = data?.connections.filter((item) => item.configured) ?? [];
   // "auto" routes each trade by its own ticker: Binance/Coinbase for crypto, Alpaca for stocks.
   const [provider, setProvider] = useState("auto");
@@ -66,6 +71,7 @@ export function ReportMarketEstimates({
                 point.symbol,
                 null,
                 available.map((item) => item.id),
+                point.accountId ? brokers.get(point.accountId) : null,
               )
             : { provider, symbol: point.symbol, dataset };
           if (!target)
